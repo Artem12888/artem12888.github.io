@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.2.1 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.2.2 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -826,6 +826,32 @@
         return catalog().then(function (db) { return catalogueSearch(db, text, likes, data().disputed); });
     }
 
+    function showPoster(item, card) {
+        var image = item.find('.card__img').first();
+        var alternative = card.kitsu ? 'https://media.kitsu.app/anime/poster_images/' + card.kitsu + '/small.jpg' : '';
+        var original = /^https:\/\/cdn\.myanimelist\.net\//i.test(card.poster) ?
+            card.poster.replace(/t(?=\.(?:jpe?g|png)$)/i, '') : card.poster;
+        var urls = unique([original, alternative, card.poster, './img/img_broken.svg']);
+        var timer;
+        function advance() {
+            clearTimeout(timer);
+            if (!urls.length) {
+                image.off('.animeTastePoster');
+                item.addClass('card--loaded');
+                return;
+            }
+            var next = urls.shift();
+            if (urls.length) timer = setTimeout(advance, 5500);
+            image.attr('src', next);
+        }
+        image.attr('alt', '').on('load.animeTastePoster', function () {
+            clearTimeout(timer);
+            image.off('.animeTastePoster');
+            item.addClass('card--loaded');
+        }).on('error.animeTastePoster', advance);
+        advance();
+    }
+
     function reading(name) {
         var value = Lampa.Storage.get(name, {});
         if (typeof value === 'string') {
@@ -1603,10 +1629,7 @@
             item.data('tasteId', card.id);
             item.find('.card__title').addClass('anime-taste__title').text(card.title);
             item.find('.card__age').text([card.year || '', card.type, card.age || ''].filter(Boolean).join(' · '));
-            var image = item.find('.card__img').first();
-            image.one('load', function () { item.addClass('card--loaded'); });
-            image.one('error', function () { $(this).attr('src', './img/img_broken.svg'); item.addClass('card--loaded'); });
-            image.attr('alt', '').attr('loading', 'lazy').attr('src', card.poster || './img/img_broken.svg');
+            showPoster(item, card);
             if (reason) item.append($('<div class="anime-taste__reason"></div>').text(reason));
             item.on('hover:focus', function () { scroll.update(item, true); });
             grid.append(item);
@@ -1811,7 +1834,7 @@
         page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.2.1', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.2.2', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
