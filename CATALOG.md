@@ -58,29 +58,45 @@ history in that section. Posters use the host's `card` template and
 navigation stays within the Lampa activity stack. Builds without a native
 Anime entry receive an **Аниме** entry for the same section.
 
-The main recommendation shelf can be scrolled with the remote. **Показать
-ещё** appends the next available results and focuses the first new card.
-Use **↑** and **↓** to move between rows. Focusing a card scrolls its
-poster and full title into view.
-The first results use the strongest candidates and the published story
-neighbours. Further requests rank more catalogue candidates in batches
-until the eligible matches are exhausted. Each shelf avoids repeating a
-catalogue franchise. Confirmed continuations appear in a separate shelf
-on the general page.
+**Рекомендации для вас** is followed by 21 genre and theme rows, including
+**Этти**, **Фэнтези**, and **Исэкай**. A row uses only entries tagged for that
+category. The remote's **←** and **→** move within a row and the next batch
+loads near its end. **↑** and **↓** move between rows. From the first row,
+**↑** returns to the tabs. Each shelf avoids repeating a catalogue franchise.
+A focused card scrolls its full title into view. Rows are built as the viewer
+approaches them, and genre shelves also work with an empty history.
 
 Choose **Как «…»** in the Anime section, or search for a title prefixed with
 **как**. The selected anime supplies the reference for story, setting and
-tag matching. Personal taste can reorder close matches, and the general
-continuation shelf is excluded from this view.
+tag matching. Personal taste can reorder close matches.
 
 The local recommendation model is a two-layer neural network with 96
 hashed tag inputs and 12 hidden units. It trains in the Lampa runtime from
-favourites, meaningful watch progress and explicit feedback. Unrated
+favourites, meaningful watch progress, confirmed rewatches, ratings and
+topics recognized in written reviews. Unrated
 catalogue examples supply a small neutral reference. The network uses a
 bounded adjustment to the existing ranking, with a smaller influence for
 requests anchored to a specific title. Model training and inference run
 on the client. The published story index and optional YummyAnime signals
 remain available.
+
+Choose **Оставить отзыв** next to **В любимое** to write a review. The plugin
+stores it locally for the active Lampa history, without a separate sign-in.
+**Настройки подбора → Мои отзывы** opens saved reviews. Reviews can be
+edited or deleted. The text is saved as entered. A local analyzer extracts
+recognized preferences from positive and negative phrases and feeds those
+signals into scoring and the local model.
+
+Russian aliases are available in `anime-ru-title-3.json`. The build confirms
+aliases already present in the open catalogue against the Russian language
+field of the [AniDB title dump](https://anidb.net/api/anime-titles.xml.gz).
+To rebuild that asset, run
+`python build-ru-titles.py anime-catalog-3.json <titles.xml.gz> anime-ru-title-3.json`.
+Other visible titles can be looked up in [Shikimori](https://shikimori.io/api/animes/11617).
+Opening the description fetches Russian text from a verified Shikimori match,
+then tries the corresponding Lampa card and optional YummyAnime match.
+Untranslated titles keep their source name, and missing Russian descriptions
+show a status in the card.
 
 The Anime layout follows the horizontal shelves and compact feature
 banner in the [DanielFadeeev Lampa theme](https://github.com/DanielFadeeev/lampa).

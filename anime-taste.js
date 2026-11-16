@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.3.2 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.4.0 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -9,13 +9,69 @@
     var COMPONENT = 'anime_taste';
     var STORAGE = 'anime_taste_v1';
     var HISTORY = 'anime_taste_history_v2';
-    var SYNOPSES = 'anime_taste_synopses_v2';
+    var SYNOPSES = 'anime_taste_synopses_ru';
     var ASSET_HOST = 'https://artem12888.github.io/';
     var ASSET_MIRROR = 'https://cdn.jsdelivr.net/gh/Artem12888/artem12888.github.io@main/';
     var ASSET_RAW = 'https://raw.githubusercontent.com/Artem12888/artem12888.github.io/main/';
     var CATALOG = ASSET_HOST + 'anime-catalog-3.json';
     var STORY_INDEX = ASSET_HOST + 'anime-story-3.json';
+    var SHIKIMORI = 'https://shikimori.io/api/animes';
     var GENRE = /^(action|adventure|comedy|drama|fantasy|horror|mystery|romance|sci fi|slice of life|sports|supernatural|thriller|psychological|historical|music|crime|suspense|mecha|ecchi)$/;
+    var GENRE_ROWS = [
+        ['ecchi', 'Этти'], ['fantasy', 'Фэнтези'], ['isekai', 'Исэкай'], ['action', 'Экшен'],
+        ['adventure', 'Приключения'], ['comedy', 'Комедия'], ['romance', 'Романтика'],
+        ['drama', 'Драма'], ['sci fi', 'Фантастика'], ['slice of life', 'Повседневность'],
+        ['supernatural', 'Сверхъестественное'], ['mystery', 'Детектив и загадки'],
+        ['horror', 'Ужасы'], ['thriller', 'Триллер'], ['psychological', 'Психология'],
+        ['historical', 'Историческое'], ['sports', 'Спорт'], ['music', 'Музыка'],
+        ['crime', 'Криминал'], ['suspense', 'Саспенс'], ['mecha', 'Меха']
+    ];
+    var REVIEW_TOPICS = [
+        ['perverted', 'герой-извращенец', /извращен|извращён|похотлив|pervert/, /^(perverted|pervert|lecherous protagonist)$/],
+        ['fanservice', 'фансервис', /фан[ -]?сервис|этти|эччи|ecchi|fanservice/, /^(ecchi|fanservice)$/],
+        ['harem', 'гарем', /гарем|harem/, /harem/],
+        ['world', 'проработка мира', /лор(?!д)|мироустро|сеттинг|проработк.{0,15}мир|мир.{0,10}проработ|world.build/, /world building|fictional location|alternative world|mythology/],
+        ['characters', 'развитие персонажей', /развити.{0,16}(геро|персон)|развива.{0,16}(геро|персон)|(геро|персон).{0,16}развива|character development/, /character driven|developing powers|coming of age/],
+        ['antihero', 'антигерой', /анти[ -]?геро|anti.?hero/, /anti ?hero|morally ambiguous/],
+        ['fights', 'сражения', /драк|боев|бои|сражени|fight|battle/, /fighting|combat|swordplay|martial arts/],
+        ['comedy', 'юмор', /юмор|шутк|смешн|комеди|comedy|humor/, /comedy|slapstick|parody/],
+        ['romance', 'романтика', /романтик|любовн|романс|romance/, /romance|unrequited love/],
+        ['mystery', 'расследования и загадки', /загадк|расследован|детектив|mystery|detective/, /detective|mystery|conspiracy|investigation/],
+        ['dark', 'мрачная атмосфера', /мрачн|т[её]мно.{0,7}фэнтези|dark fantasy|grimdark/, /dark fantasy|horror|grimdark|tragedy/],
+        ['slow', 'спокойный темп', /неспешн|медленн|затянут|slow.burn/, /slow burn|iyashikei|slice of life/],
+        ['school', 'школа', /школ|академи|school|academy/, /school|academy/],
+        ['magic', 'магия', /магия|маги[ию]|магич|волшеб|magic/, /magic|sorcery|witch/],
+        ['isekai', 'попадание в другой мир', /исэкай|исекай|друг.{0,6}мир|попадан|isekai/, /isekai|alternative world|parallel world/],
+        ['politics', 'политика и интриги', /политик|интриг|заговор|politics|intrigue/, /politic|conspiracy|espionage/],
+        ['family', 'обретённая семья', /обрет.{0,8}сем|найден.{0,8}сем|found family/, /found family/],
+        ['time', 'путешествия во времени', /временн.{0,7}петл|путешеств.{0,12}во времени|time (travel|loop)/, /time (travel|loop|manipulation)/]
+    ];
+
+    function analyzeReview(text) {
+        var votes = maps(), sentiment = 0;
+        var bad = /(?:^|[^а-яёa-z])не\s+(?:очень\s+)?(?:понрав|нрав|люб|заш|зацеп|интерес|впечатл)|раздраж|бесит|отталкива|скучн|ненавиж|плох|dislike|hate|boring/;
+        var good = /понрав|нрав|люблю|заш[её]л|зашло|зацеп|обожа|отличн|крут|интерес|like|love|enjoy/;
+        String(text || '').toLowerCase().split(/[.!?;\n]+|\s+(?:но|зато|однако)\s+|,\s*(?=(?:мне\s+)?(?:не\s+)?(?:понрав|нрав|люб|раздраж|бесит))/)
+            .forEach(function (clause) {
+                var sign = bad.test(clause) ? -1 : good.test(clause) ? 1 : 0;
+                sentiment += sign;
+                if (!sign) return;
+                REVIEW_TOPICS.forEach(function (topic) {
+                    if (topic[2].test(clause)) votes[topic[0]] = (votes[topic[0]] || 0) + sign;
+                });
+            });
+        return {sentiment: sentiment, topics: votes};
+    }
+
+    function reviewAdjustment(card, topics) {
+        var score = 0;
+        REVIEW_TOPICS.forEach(function (topic) {
+            if (topics[topic[0]] && card.tags.some(function (tag) { return topic[3].test(tag); })) {
+                score += Math.max(-2, Math.min(2, topics[topic[0]]));
+            }
+        });
+        return Math.max(-0.16, Math.min(0.16, score * 0.055));
+    }
     var WORLD = /world|fantasy|apocalyp|dystopi|cyberpunk|steampunk|space|magic|alchemy|alchemist|school|medieval|historical|isekai|future|virtual reality|parallel dimension|urban|rural|mytholog|military|empire|kingdom|demons?|vampire|outer space|robots?|superpowers?|alien|^folklore$|^supernatural$/;
     var TONES = /coming of age|found family|time loop|time travel|time skip|character driven|tragedy|ensemble cast|redemption|revenge|survival|battle of wits|mind games|conspiracy|rivalry|politics|detective|murder|rebellion|tournament|family life|unrequited love|sacrifice|secret identity|memory manipulation|espionage|slow burn|episodic/;
     var MOOD = /^(comedy|drama|thriller|horror|psychological|slice of life(?: drama)?|dark fantasy|action comedy|supernatural (?:drama|thriller)|romantic comedy|slapstick|parody|heartwarming|wholesome|melancholy|nostalgia|iyashikei|angst|tragedy|surreal comedy|black comedy|grimdark|suspense|ecchi|episodic)$/;
@@ -284,6 +340,8 @@
                 tags: unique(row[8].map(function (id) { return tagKey(raw.tags[id]); })), related: row[9],
                 age: row[12] || '', restricted: row[13] || 0, family: row[14] || row[0],
                 next: row[15] || '', tmdb: row[16] || null, upcoming: Boolean(row[17])};
+            var mal = (row[11] || []).filter(function (id) { return /^m\d+$/.test(id); })[0];
+            card.mal = mal ? Number(mal.slice(1)) : 0;
             db.cards.push(card);
             db.ids[card.id] = card;
             (row[11] || []).forEach(function (id) { if (!db.ids[id]) db.ids[id] = card; });
@@ -488,7 +546,8 @@
 
     function tasteNetwork(db, positives, negatives) {
         if (!positives.length) return null;
-        var signature = positives.map(function (seed) { return seed.card.id + ':' + seed.weight; }).join(',') +
+        var signature = positives.map(function (seed) { return seed.card.id + ':' + seed.weight + ':' +
+            JSON.stringify(seed.review || {}); }).join(',') +
             '/' + negatives.map(function (seed) { return seed.card.id; }).join(',');
         if (db.network && db.network.signature === signature) return db.network.predict;
 
@@ -503,13 +562,16 @@
         for (var i = 0; i < first.length; i++) first[i] = (random() - 0.5) * 0.28;
         for (var j = 0; j < last.length; j++) last[j] = (random() - 0.5) * 0.28;
 
-        function vector(card) {
+        function vector(card, review) {
             var bins = maps(), norm = 0;
             card.tags.forEach(function (tag) {
                 var hash = 5381;
                 for (var k = 0; k < tag.length; k++) hash = (hash * 33 ^ tag.charCodeAt(k)) >>> 0;
                 var bin = hash % width;
                 var value = Math.min(2, 0.6 + 0.27 * Math.log(db.cards.length / db.frequency[tag]));
+                if (review) REVIEW_TOPICS.forEach(function (topic) {
+                    if (review[topic[0]] && topic[3].test(tag)) value *= review[topic[0]] > 0 ? 1.65 : 0.45;
+                });
                 bins[bin] = (bins[bin] || 0) + (hash & 128 ? value : -value);
             });
             var keys = Object.keys(bins);
@@ -529,7 +591,7 @@
         }
         function sample(seed, target, weight) {
             rated[seed.card.family] = true;
-            return {input: vector(seed.card), target: target, weight: weight};
+            return {input: vector(seed.card, seed.review), target: target, weight: weight};
         }
         var examples = positives.map(function (seed) { return sample(seed, 1, seed.weight); });
         negatives.forEach(function (seed) { examples.push(sample(seed, 0, 1)); });
@@ -564,7 +626,7 @@
         return predict;
     }
 
-    function rankTaste(db, seeds, candidates, descriptions, focus, negative, assistance, autonomous, personalization) {
+    function rankTaste(db, seeds, candidates, descriptions, focus, negative, assistance, autonomous, personalization, browse) {
         function rarity(key) {
             return Math.min(1.65, 0.45 + Math.log((db.cards.length + 1) / ((db.frequency[key] || 0) + 1)) * 0.2);
         }
@@ -580,7 +642,7 @@
         var prepared = seeds.map(prepare);
         var unwanted = (negative || []).map(prepare);
         var ranked = candidates.map(function (card) {
-            var candidate = {card: card, features: features(card, descriptions[card.id])};
+            var candidate = {card: card, features: prepared.length || unwanted.length ? features(card, descriptions[card.id]) : null};
             var described = db.story[card.id] && db.story[card.id][0];
             var hits = prepared.map(function (seed) {
                 var hit = compareTaste(seed, candidate, rarity, focus === 'all' && seed.focus || focus,
@@ -589,8 +651,8 @@
                 hit.score *= seed.weight;
                 return hit;
             }).filter(function (hit) { return hit.specific; }).sort(function (a, b) { return b.score - a.score; });
-            if (!hits.length) return null;
-            var primary = hits[0];
+            if (!hits.length && !browse) return null;
+            var primary = hits[0] || {score: 0};
             var agreement = hits.slice(1, 4).reduce(function (sum, hit) { return sum + hit.score; }, 0);
             var penalty = unwanted.reduce(function (highest, seed) {
                 if (card.family === seed.card.family) return Math.max(highest, 0.34);
@@ -599,9 +661,12 @@
             }, 0);
             var signal = assistance && assistance[card.id] || 0;
             var bonus = signal && primary.score >= 0.28 ? Math.min(0.075, 0.06 * signal + Math.min(0.012, primary.score * 0.012)) : 0;
-            var learned = personalization ? personalization.predict(card) * (personalization.anchored ? 0.11 : 0.22) : 0;
+            var learned = personalization && personalization.predict ? personalization.predict(card) * (personalization.anchored ? 0.11 : 0.22) : 0;
+            if (personalization && personalization.review) {
+                learned += reviewAdjustment(card, personalization.review) * (personalization.anchored ? 0.5 : 1);
+            }
             return {card: card, score: primary.score + 0.12 * agreement + 0.002 * card.rating - penalty + learned, bonus: bonus,
-                reasons: ['Похоже на «' + primary.seed + '»'].concat(primary.reasons.slice(0, 3))};
+                reasons: primary.seed ? ['Похоже на «' + primary.seed + '»'].concat(primary.reasons.slice(0, 3)) : []};
         }).filter(Boolean).sort(function (a, b) { return b.score - a.score || a.card.id.localeCompare(b.card.id); });
         if (autonomous) {
             var baselineFamilies = maps();
@@ -626,13 +691,17 @@
         return ranked.filter(function (entry) {
             if (shown[entry.card.family]) return false;
             shown[entry.card.family] = true;
-            return entry.score > 0;
+            return browse || entry.score > 0;
         });
     }
 
-    function recommendationQueue(db, seeds, excluded, disputed, focus, negative, suggestions, personalization) {
+    function recommendationQueue(db, seeds, excluded, disputed, focus, negative, suggestions, personalization, genre) {
         var scores = maps(), neighbors = maps(), assistance = maps();
-        function eligible(card) { return card && !card.upcoming && visible(card, disputed) && !excluded[card.id]; }
+        var browse = Boolean(genre) || !seeds.length;
+        function eligible(card) {
+            return card && !card.upcoming && visible(card, disputed) && !excluded[card.id] &&
+                (!genre || card.tags.indexOf(genre) >= 0);
+        }
         function canonical(card) {
             var first = card && db.entries[card.family];
             return eligible(first) ? first : card;
@@ -653,7 +722,12 @@
             });
             seed.card.related.forEach(function (id) { if (eligible(db.ids[id])) neighbors[id] = true; });
         });
-        var shortlist = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; });
+        if (browse) (genre ? db.tags[genre] || [] : db.cards).forEach(function (card) {
+            if (eligible(card) && scores[card.id] === undefined) scores[card.id] = 0;
+        });
+        var shortlist = Object.keys(scores).sort(function (a, b) {
+            return scores[b] - scores[a] || (browse ? db.ids[b].rating - db.ids[a].rating : 0);
+        });
         var candidates = uniqueCards(shortlist.slice(0, 260).concat(Object.keys(neighbors))
             .map(function (id) { return canonical(db.ids[id]); }));
         var seedIds = maps(), autonomous = null, supplemental = [];
@@ -687,7 +761,7 @@
                 return true;
             });
             return rankTaste(db, seeds, unseen, {}, focus || 'all', negative,
-                firstBatch ? assistance : null, firstBatch ? autonomous : null, personalization).filter(function (entry) {
+                firstBatch ? assistance : null, firstBatch ? autonomous : null, personalization, browse).filter(function (entry) {
                 shown[entry.card.family] = true;
                 return true;
             });
@@ -779,7 +853,7 @@
         if (!entry) return 0;
         var counts = watchStats(entry);
         if (entry.marked || counts.finished) return Math.min(0.96, 0.68 + Math.log(1 + counts.finished) * 0.07 +
-            Math.min(0.12, counts.replays * 0.05 + (entry.resumed || 0) * 0.025));
+            Math.min(0.08, (entry.resumed || 0) * 0.025)) + Math.min(0.24, Math.log(1 + counts.replays) * 0.13);
         if (entry.substantial || entry.percent >= 30) return entry.percent >= 75 ? 0.72 : 0.46;
         return 0;
     }
@@ -788,7 +862,8 @@
         module.exports = {parseQuery: parseQuery, indexCatalog: indexCatalog, catalogueSearch: catalogueSearch,
             matchCatalog: matchCatalog, features: features, rankTaste: rankTaste, sufficient: sufficient,
             recommend: recommend, recommendationQueue: recommendationQueue, tasteNetwork: tasteNetwork,
-            interestGroups: interestGroups, viewingWeight: viewingWeight, viewedEpisode: viewedEpisode};
+            interestGroups: interestGroups, viewingWeight: viewingWeight, viewedEpisode: viewedEpisode,
+            analyzeReview: analyzeReview, reviewAdjustment: reviewAdjustment};
         return;
     }
 
@@ -804,6 +879,8 @@
     var storyRequest;
     var plotCache = maps();
     var nativeCache = maps();
+    var translatedTitles = maps(), titlesRequest, titleQueue = maps(), triedTitles = maps();
+    var titleTimer, loadingTitles = false, titlesRetry = 0;
     var activePlayback;
     var historyTimer;
     var historyIndex;
@@ -863,6 +940,70 @@
             xhr.onerror = xhr.ontimeout = xhr.onabort = function () { reject(new Error('Сетевой запрос не завершился.')); };
             xhr.send();
         });
+    }
+
+    function russian(value) {
+        value = typeof value === 'string' ? value.trim() : '';
+        return /[а-яё]{2}/i.test(value) ? value : '';
+    }
+
+    function displayTitle(card) { return translatedTitles[card.id] || card.title; }
+
+    function rememberTitle(db, card, value) {
+        var title = russian(value);
+        if (!title) return;
+        translatedTitles[card.id] = title;
+        var alias = normalTitle(title);
+        var indexed = db.names[alias] || (db.names[alias] = []);
+        if (card.indexed.indexOf(alias) < 0) card.indexed.push(alias);
+        if (indexed.indexOf(card) < 0) indexed.push(card);
+    }
+
+    function loadRussianTitles(db) {
+        var file = 'anime-ru-title-3.json';
+        if (!titlesRequest) titlesRequest = requestJson(ASSET_HOST + file, 4800).catch(function () {
+            return requestJson(ASSET_MIRROR + file, 4800);
+        }).then(function (names) {
+            Object.keys(names).forEach(function (id) {
+                if (db.ids[id] && !translatedTitles[id]) rememberTitle(db, db.ids[id], names[id]);
+            });
+        }).catch(function () { titlesRequest = null; });
+        return titlesRequest;
+    }
+
+    function verifiedRussian(card, record) {
+        return record && Number(record.id) === card.mal &&
+            (!record.myanimelist_id || Number(record.myanimelist_id) === card.mal) &&
+            card.indexed.indexOf(normalTitle(record.name)) >= 0;
+    }
+
+    function flushTitleQueue() {
+        titleTimer = null;
+        if (loadingTitles) return;
+        var ids = Object.keys(titleQueue).slice(0, 30);
+        if (!ids.length) return;
+        var batch = maps();
+        ids.forEach(function (id) { batch[id] = titleQueue[id]; delete titleQueue[id]; });
+        loadingTitles = true;
+        requestJson(SHIKIMORI + '?ids=' + ids.join(',') + '&limit=' + ids.length, 4600).then(function (payload) {
+            if (!Array.isArray(payload)) return;
+            ids.forEach(function (id) { triedTitles[id] = true; });
+            payload.forEach(function (record) {
+                var work = batch[record.id];
+                if (work && verifiedRussian(work.card, record)) rememberTitle(work.db, work.card, record.russian);
+            });
+        }).catch(function () { titlesRetry = Date.now() + 20000; }).then(function () {
+            loadingTitles = false;
+            ids.forEach(function (id) { batch[id].updates.forEach(function (update) { update(); }); });
+            if (Object.keys(titleQueue).length && !titleTimer) titleTimer = setTimeout(flushTitleQueue, 550);
+        });
+    }
+
+    function queueRussianTitle(db, card, update) {
+        if (translatedTitles[card.id] || !card.mal || triedTitles[card.mal] || Date.now() < titlesRetry) { update(); return; }
+        var pending = titleQueue[card.mal] || (titleQueue[card.mal] = {db: db, card: card, updates: []});
+        pending.updates.push(update);
+        if (!titleTimer && !loadingTitles) titleTimer = setTimeout(flushTitleQueue, 170);
     }
 
     function catalogParts() {
@@ -988,7 +1129,11 @@
     }
 
     function searchIndependent(text, likes) {
-        return catalog().then(function (db) { return catalogueSearch(db, text, likes, data().disputed); });
+        return catalog().then(function (db) {
+            return deadline(loadRussianTitles(db), null, 1500).then(function () {
+                return catalogueSearch(db, text, likes, data().disputed);
+            });
+        });
     }
 
     function showPoster(item, card) {
@@ -1055,12 +1200,28 @@
         if (!key) return null;
         return {id: source.id, source: source.source || 'tmdb',
             method: key.indexOf('tv_') >= 0 ? 'tv' : 'movie',
+            overview: russian(source.overview || source.description),
             title: String(source.name || source.title || source.original_name || source.original_title || '').slice(0, 180)};
     }
 
     function savedHistory() { return reading(historyFile()); }
 
     function guidanceFile() { return historyFile() + '_preferences'; }
+
+    function reviewFile() { return historyFile() + '_reviews'; }
+
+    function reviews() {
+        try { return JSON.parse(window.localStorage.getItem(reviewFile()) || '{}') || {}; }
+        catch (error) { return {}; }
+    }
+
+    function writeReview(card, text) {
+        var saved = reviews();
+        if (text === null) delete saved[card.id];
+        else saved[card.id] = {text: text, when: Date.now()};
+        try { window.localStorage.setItem(reviewFile(), JSON.stringify(saved)); return true; }
+        catch (error) { Lampa.Noty.show('Не удалось сохранить отзыв на устройстве.'); return false; }
+    }
 
     function guidance() {
         var saved = reading(guidanceFile());
@@ -1264,7 +1425,8 @@
         Object.keys(rules.feedback).forEach(function (id) {
             if (db.ids[id]) feedback[db.ids[id].id] = rules.feedback[id];
         });
-        return {likes: likes, hidden: hidden, supplemental: supplemental, feedback: feedback, disputed: saved.disputed};
+        return {likes: likes, hidden: hidden, supplemental: supplemental, feedback: feedback,
+            reviews: reviews(), disputed: saved.disputed};
     }
 
     function compactPreference(card, stamp) {
@@ -1288,22 +1450,48 @@
         Lampa.Storage.set(STORAGE, saved);
     }
 
-    function synopsis(card) {
-        if (!card.kitsu) return Promise.resolve('');
+    function synopsis(db, card, entry, yummyId) {
         if (!plotCache[card.id]) {
             var saved = reading(SYNOPSES)[card.id];
             if (saved && saved.when > Date.now() - 60 * 24 * 60 * 60 * 1000) return Promise.resolve(saved.text);
-            plotCache[card.id] = requestJson('https://kitsu.app/api/edge/anime/' + card.kitsu, 4500).then(function (payload) {
-                var text = String(payload.data && payload.data.attributes && payload.data.attributes.synopsis || '').slice(0, 3200);
-                if (text) {
+            var shiki = card.mal ? requestJson(SHIKIMORI + '/' + card.mal, 4800).then(function (record) {
+                if (!verifiedRussian(card, record)) return '';
+                rememberTitle(db, card, record.russian);
+                return russian(String(record.description || '').replace(/\[\/?[a-z][a-z]*(?:=[^\]]+)?\]/gi, ''));
+            }).catch(function () { return ''; }) : Promise.resolve('');
+            plotCache[card.id] = shiki.then(function (value) {
+                if (value) return value;
+                return sourceFromLampa(card, entry).then(function (native) {
+                    if (!native) return '';
+                    rememberTitle(db, card, native.title);
+                    return native.overview || '';
+                });
+            }).then(function (value) {
+                var api = publicApi();
+                if (value || !data().useYummy || !api || typeof api.detail !== 'function') return value;
+                var target = yummyId ? Promise.resolve(yummyId) : typeof api.search === 'function' ?
+                    deadline(api.search(card.title, {limit: 12}), [], 3500).then(function (payload) {
+                        var exact = api.normalize(payload).map(anime).filter(function (result) {
+                            return result && matchCatalog(db, result) === card;
+                        })[0];
+                        return exact && exact.id;
+                    }) : Promise.resolve(null);
+                return target.then(function (id) { return id ? deadline(api.detail(id), null, 4400) : null; }).then(function (payload) {
+                    var exact = payloadValue(payload);
+                    if (!exact || matchCatalog(db, anime(exact)) !== card) return '';
+                    return russian(exact.description || exact.overview);
+                });
+            }).then(function (value) {
+                var description = String(value || '').slice(0, 4200);
+                if (description) {
                     var all = reading(SYNOPSES);
-                    all[card.id] = {text: text, when: Date.now()};
+                    all[card.id] = {text: description, when: Date.now()};
                     Object.keys(all).sort(function (a, b) { return all[b].when - all[a].when; })
                         .slice(80).forEach(function (id) { delete all[id]; });
                     Lampa.Storage.set(SYNOPSES, all, true);
                 }
                 delete plotCache[card.id];
-                return text;
+                return description;
             }).catch(function () {
                 delete plotCache[card.id];
                 return '';
@@ -1313,14 +1501,24 @@
     }
 
     function tasteProfile(db, prefs, watch, source) {
-        var feedback = prefs.feedback, excluded = maps(), families = maps();
-        var keys = unique(Object.keys(prefs.likes).concat(Object.keys(watch), Object.keys(feedback)));
+        var feedback = prefs.feedback, excluded = maps(), families = maps(), analyses = maps(), topics = maps();
+        Object.keys(prefs.reviews).forEach(function (id) {
+            if (!db.ids[id] || !prefs.reviews[id] || !prefs.reviews[id].text) return;
+            var review = analyses[id] = analyzeReview(prefs.reviews[id].text);
+            Object.keys(review.topics).forEach(function (key) { topics[key] = (topics[key] || 0) + review.topics[key]; });
+        });
+        var keys = unique(Object.keys(prefs.likes).concat(Object.keys(watch), Object.keys(feedback), Object.keys(analyses)));
         var signals = keys.reduce(function (collected, id) {
-            var card = db.ids[id], vote = feedback[id];
+            var card = db.ids[id], vote = feedback[id], review = analyses[id];
             if (!card || !visible(card, prefs.disputed) || vote && vote.action === 'negative') return collected;
-            var weight = vote && vote.action === 'positive' ? 1.22 : prefs.likes[id] ? 1 : viewingWeight(watch[id]);
-            if (weight) collected.push({card: card, weight: weight, focus: vote && vote.focus,
-                updated: vote && vote.when || prefs.likes[id] || watch[id] && watch[id].last || 0});
+            var rated = vote && vote.action === 'positive' || prefs.likes[id];
+            if (!rated && review && review.sentiment < 0 && !Object.keys(review.topics).some(function (key) { return review.topics[key] > 0; })) return collected;
+            var weight = Math.max(vote && vote.action === 'positive' ? 1.22 : prefs.likes[id] ? 1 : 0, viewingWeight(watch[id]),
+                review && (review.sentiment > 0 || Object.keys(review.topics).some(function (key) { return review.topics[key] > 0; })) ? 0.92 : 0);
+            if (rated && watch[id]) weight += Math.min(0.16, Math.log(1 + watchStats(watch[id]).replays) * 0.08);
+            if (weight) collected.push({card: card, weight: weight, focus: vote && vote.focus, review: review && review.topics,
+                updated: Math.max(vote && vote.when || 0, prefs.likes[id] || 0, watch[id] && watch[id].last || 0,
+                    prefs.reviews[id] && prefs.reviews[id].when || 0)});
             return collected;
         }, []).sort(function (a, b) { return b.weight - a.weight || b.updated - a.updated; }).filter(function (seed) {
             if (families[seed.card.family]) return false;
@@ -1328,33 +1526,25 @@
             return true;
         });
         var seeds = source ? [{card: source, weight: 1}] : signals.slice(0, 12);
-        var negative = Object.keys(feedback).filter(function (id) { return feedback[id].action === 'negative'; })
-            .sort(function (a, b) { return feedback[b].when - feedback[a].when; }).slice(0, 24)
+        var negative = keys.filter(function (id) {
+            var review = analyses[id];
+            return feedback[id] && feedback[id].action === 'negative' ||
+                !prefs.likes[id] && !(feedback[id] && feedback[id].action === 'positive') && review &&
+                review.sentiment < 0 && !Object.keys(review.topics).some(function (key) { return review.topics[key] > 0; });
+        }).sort(function (a, b) {
+            return (feedback[b] || prefs.reviews[b]).when - (feedback[a] || prefs.reviews[a]).when;
+        }).slice(0, 24)
             .map(function (id) { return {card: db.ids[id], weight: 1}; }).filter(function (seed) { return seed.card; });
         var trackedFamilies = maps();
         seeds.forEach(function (seed) { trackedFamilies[seed.card.family] = true; });
-        var continuations = maps();
-        // Keep the furthest confirmed season in each family. A later view supersedes older next-season suggestions.
-        db.cards.forEach(function (card) {
-            var vote = feedback[card.id];
-            if (!trackedFamilies[card.family] && !(source && source.family === card.family)) return;
-            if (watch[card.id] || vote && vote.action === 'seen' || source && source.id === card.id || prefs.likes[card.id]) {
-                var previous = continuations[card.family];
-                if (!previous || card.year > previous.year) continuations[card.family] = card;
-            }
-        });
         Object.keys(prefs.hidden).concat(Object.keys(prefs.likes)).forEach(function (id) { excluded[id] = true; });
         Object.keys(watch).forEach(function (id) {
             if (watch[id].marked || watch[id].substantial || watch[id].percent >= 75) excluded[id] = true;
         });
         Object.keys(feedback).forEach(function (id) { excluded[id] = true; });
+        Object.keys(analyses).forEach(function (id) { excluded[id] = true; });
         db.cards.forEach(function (card) { if (trackedFamilies[card.family]) excluded[card.id] = true; });
-        var next = uniqueCards(Object.keys(continuations).map(function (family) {
-            return db.ids[continuations[family].next];
-        })).filter(function (card) {
-            return visible(card, prefs.disputed) && !card.upcoming && !watch[card.id] && !prefs.hidden[card.id] && !feedback[card.id];
-        });
-        return {seeds: seeds, signals: signals.slice(0, 72), negative: negative, excluded: excluded, next: next};
+        return {seeds: seeds, signals: signals.slice(0, 72), negative: negative, excluded: excluded, topics: topics};
     }
 
     function sourceFromLampa(card, entry) {
@@ -1562,6 +1752,8 @@
                             openTaste('mark', card);
                         }, 'yani-detail__button anime-taste__favorite');
                         actions.prepend(control);
+                        button('Оставить отзыв', function () { openTaste('review', card); },
+                            'yani-detail__button anime-taste__favorite').insertAfter(control);
                     }
                     return start.apply(this, arguments);
                 };
@@ -1619,7 +1811,7 @@
                     searchIndependent(query, data().likes).then(function (matches) {
                         var results = matches.slice(0, 12).map(function (entry) {
                             var card = entry.card;
-                            return {id: 'anime_taste_' + card.id, title: card.title, img: card.poster, poster: card.poster,
+                            return {id: 'anime_taste_' + card.id, title: displayTitle(card), img: card.poster, poster: card.poster,
                                 release_date: String(card.year || ''), vote_average: card.rating, tasteCard: card};
                         });
                         done(results.length ? [{title: NAME, type: 'anime', results: results, total: results.length, total_pages: 1}] : []);
@@ -1673,6 +1865,7 @@
             if (!actions.length || actions.find('.anime-taste__lampa-favorite').length) return;
             var add = button('♡ В любимое аниме', function () { openTaste('mark', movie); }, 'full-start__button anime-taste__lampa-favorite');
             actions.prepend(add);
+            button('Оставить отзыв', function () { openTaste('review', movie); }, 'full-start__button anime-taste__lampa-review').insertAfter(add);
         });
         $('<style></style>').text([
             '.activity__body .anime-taste{min-height:100%;padding:.6em 1.5em 2em;background:#30394d;color:#f5f6fa}',
@@ -1690,10 +1883,13 @@
             '.anime-taste__hero-meta{margin-top:.45em;color:#f0f3f9}',
             '.anime-taste__message{margin:.6em 0 .8em;line-height:1.4}',
             '.anime-taste__message:empty{display:none}',
+            '.anime-taste__review{margin:.4em .6em 1em;line-height:1.45;white-space:pre-wrap;overflow-wrap:break-word}',
             '.anime-taste__grid{display:flex;flex-wrap:wrap;align-items:flex-start}',
             '.anime-taste__grid .anime-taste__row{width:20%;padding:0 .6em 1.3em;box-sizing:border-box}',
             '.anime-taste__shelf{margin:.4em 0 1em}',
             '.anime-taste__shelf-head{display:flex;align-items:center;justify-content:space-between;min-height:2.4em;margin:0 .5em .4em;font-weight:600}',
+            '.anime-taste__shelf-status{font-size:.78em;color:#f0f3f9;font-weight:400}',
+            '.anime-taste__sentinel{height:1px}',
             '.anime-taste__shelf .anime-taste__grid{position:relative;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}',
             '.anime-taste__shelf .anime-taste__grid::-webkit-scrollbar{display:none}',
             '.anime-taste__shelf .anime-taste__row{width:14.285%;flex:0 0 14.285%;padding:.25em .5em .65em}',
@@ -1716,12 +1912,13 @@
         var mode = object.tasteMode || 'recommendations';
         var source = object.tasteCard;
         var flavor = property(FOCUS, object.tasteFocus) ? object.tasteFocus : 'all';
-        if ((mode === 'similar' || mode === 'mark' || mode === 'card' || mode === 'bind') && !source) mode = 'recommendations';
+        if ((mode === 'similar' || mode === 'mark' || mode === 'review' || mode === 'card' || mode === 'bind') && !source) mode = 'recommendations';
         var query = '';
         var interest = null;
         var account = {favorites: []};
         var db, prefs, watch;
         var focusId, focusFrame;
+        var genreObserver;
         var workspace = $('<div class="anime-taste"></div>');
         var toolbar = $('<div class="anime-taste__toolbar"></div>').appendTo(workspace);
         var interests = $('<div class="anime-taste__interests"></div>').appendTo(workspace);
@@ -1730,6 +1927,14 @@
         var scroll = new Lampa.Scroll({mask: false, over: true, step: 220});
         scroll.minus();
         scroll.append(workspace);
+        var cardObserver = window.IntersectionObserver ? new window.IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                cardObserver.unobserve(entry.target);
+                var prepare = $(entry.target).data('tastePrepare');
+                if (prepare && workspace[0].contains(entry.target)) prepare();
+            });
+        }, {root: scroll.render(true), rootMargin: '160px 0px'}) : null;
         workspace[0].addEventListener('hover:focus', function (event) {
             var target = event.target;
             // Measure after Lampa applies the focus class and expands the title.
@@ -1742,7 +1947,7 @@
         function focus() {
             if (!active || destroyed || Lampa.Controller.enabled().name !== 'content') return;
             Lampa.Controller.collectionSet(workspace);
-            var selected = results.find('.anime-taste__row').filter(function () { return $(this).data('tasteId') === focusId; }).first();
+            var selected = results.find('.anime-taste__row').filter(function () { return $(this).data('tasteFocusKey') === focusId; }).first();
             Lampa.Controller.collectionFocus(selected.length ? selected[0] : false, workspace);
         }
 
@@ -1766,7 +1971,34 @@
             });
         }
 
+        function editReview(card) {
+            if (!Lampa.Input || !Lampa.Input.edit) return Lampa.Noty.show('В этой сборке Lampa нет экранного ввода.');
+            var previous = reviews()[card.id];
+            Lampa.Input.edit({title: 'Что понравилось или не понравилось? · ' + displayTitle(card),
+                value: previous && previous.text || '', free: true, nosave: true, nomic: true}, function (value) {
+                var text = String(value || '').trim();
+                Lampa.Controller.toggle('content');
+                if (!text || !writeReview(card, text)) return;
+                var signals = analyzeReview(text);
+                var found = REVIEW_TOPICS.filter(function (topic) { return signals.topics[topic[0]]; });
+                Lampa.Noty.show(found.length ? 'Отзыв сохранён. Учту: ' + found.map(function (topic) { return topic[1]; }).join(', ') :
+                    'Отзыв сохранён');
+                refresh();
+            });
+        }
+
+        function reviewControls(card, parent) {
+            var saved = prefs.reviews[card.id];
+            button(saved ? 'Изменить мой отзыв' : 'Оставить отзыв', function () { editReview(card); }).appendTo(parent);
+            if (!saved) return;
+            button('Удалить мой отзыв', function () {
+                if (writeReview(card, null)) refresh();
+            }).appendTo(parent);
+            $('<div class="anime-taste__review"></div>').text(saved.text).appendTo(parent);
+        }
+
         function selectCard(card) {
+            if (mode === 'review') { editReview(card); return; }
             if (mode === 'bind') {
                 rememberBinding(source, card);
                 storeViews(db, historyFile(), [{source: source.source, card: card, road: source.road,
@@ -1787,6 +2019,7 @@
                     if (mode === 'mark') { Lampa.Activity.backward(); return; }
                     refresh();
                 }},
+                {title: prefs.reviews[card.id] ? 'Изменить мой отзыв' : 'Оставить отзыв', action: function () { editReview(card); }},
                 {title: hidden ? 'Вернуть в рекомендации' : 'Скрыть из рекомендаций', action: function () {
                     setPreference(db, card, 'hidden', !hidden);
                     refresh();
@@ -1810,11 +2043,12 @@
             items.push({title: 'Не моё', action: function () { setFeedback(card, 'negative'); refresh(); }});
             items.push({title: 'Уже видел', action: function () { setFeedback(card, 'seen'); refresh(); }});
             if (feedback) items.push({title: 'Снять оценку', action: function () { setFeedback(card, null); refresh(); }});
+            if (prefs.reviews[card.id]) items.push({title: 'Мой отзыв', action: function () { openTaste('card', card); }});
             if (mode !== 'card') items.push({title: 'Описание и темы', action: function () { openTaste('card', card); }});
             if (yummy && window.LampaYaniDetail) items.push({
                 title: 'Открыть в YummyAnime', action: function () { openDetail(Object.assign({}, card, {id: yummy})); }
             });
-            Lampa.Select.show({title: card.title, items: items,
+            Lampa.Select.show({title: displayTitle(card), items: items,
                 onSelect: function (item) { item.action(); }, onBack: function () { Lampa.Controller.toggle('content'); }});
         }
 
@@ -1822,23 +2056,43 @@
             var grid = target || results.children().last();
             if (!grid.hasClass('anime-taste__grid')) grid = $('<div class="anime-taste__grid"></div>').appendTo(results);
             var item = $(Lampa.Template.get('card', {title: '', release_year: String(card.year || '')}));
-            item.addClass('anime-taste__row').on('hover:enter', function () { focusId = card.id; selectCard(card); });
+            var key = target ? grid.data('tasteLane') + ':' + card.id : card.id;
+            item.addClass('anime-taste__row').on('hover:enter', function () { focusId = key; selectCard(card); });
             item.data('tasteId', card.id);
-            item.find('.card__title').addClass('anime-taste__title').text(card.title);
+            item.data('tasteFocusKey', key);
+            var title = item.find('.card__title').addClass('anime-taste__title').text(displayTitle(card));
             item.find('.card__age').text([card.year || '', card.type, card.age || ''].filter(Boolean).join(' · '));
             if (card.rating > 0) item.find('.card__view').append($('<div class="card__vote"></div>').text(Number(card.rating).toFixed(1)));
-            showPoster(item, card);
+            var prepared = false;
+            function prepare() {
+                if (prepared) return;
+                prepared = true;
+                showPoster(item, card);
+                queueRussianTitle(db, card, function () {
+                    if (workspace[0].contains(item[0])) {
+                        title.text(displayTitle(card));
+                        if (active && item.hasClass('focus')) scroll.update(item, true);
+                    }
+                });
+            }
             if (reason) item.append($('<div class="anime-taste__reason"></div>').text(reason));
             item.on('hover:focus', function () {
-                focusId = card.id;
+                focusId = key;
+                prepare();
                 if (target) {
                     var track = grid[0], element = item[0];
                     var left = element.offsetLeft, right = left + element.offsetWidth;
                     if (left < track.scrollLeft) track.scrollLeft = left;
                     else if (right > track.scrollLeft + track.clientWidth) track.scrollLeft = right - track.clientWidth;
+                    var visit = grid.data('tasteVisit');
+                    if (visit) visit();
                 }
             });
             grid.append(item);
+            if (cardObserver) {
+                item.data('tastePrepare', prepare);
+                cardObserver.observe(item[0]);
+            } else prepare();
             return item;
         }
 
@@ -1861,24 +2115,27 @@
             if (subtitle) $('<div class="anime-taste__hero-meta"></div>').text(subtitle).appendTo(content);
         }
 
-        function shelf(title) {
-            var section = $('<section class="anime-taste__shelf"></section>').appendTo(results);
+        function pagedShelf(title, queue, current, tag, visit) {
+            var section = $('<section class="anime-taste__shelf"></section>').attr('data-genre', tag || '').appendTo(results);
             var header = $('<div class="anime-taste__shelf-head"></div>').appendTo(section);
             $('<div></div>').text(title).appendTo(header);
-            return {header: header, grid: $('<div class="anime-taste__grid"></div>').appendTo(section)};
-        }
-
-        function pagedShelf(title, queue, current) {
-            var lane = shelf(title);
-            var pending = [], busy = false, pageSize = 21;
-            var more = button('Показать ещё', function () { append(true); }).addClass('anime-taste__more');
-            lane.grid.data('tasteMore', function () {
-                if (!more.parent().length) return false;
-                append(true);
-                return true;
+            var status = $('<span class="anime-taste__shelf-status"></span>').appendTo(header);
+            var grid = $('<div class="anime-taste__grid"></div>').appendTo(section);
+            var pending = [], busy = false, advance = false, pageSize = tag ? 14 : 21;
+            grid.data('tasteLane', tag || 'main').data('tasteMore', append).data('tasteVisit', visit);
+            grid.on('scroll', function () {
+                var track = grid[0];
+                if (track.scrollLeft > 0 && track.scrollWidth - track.clientWidth - track.scrollLeft <= track.clientWidth / 3) {
+                    append(false);
+                }
             });
             function append(moveFocus) {
-                if (busy || current !== ticket || destroyed) return;
+                if (current !== ticket || destroyed || !pending.length && !queue.hasMore()) return false;
+                advance = advance || moveFocus;
+                if (busy) {
+                    if (advance) status.text('Загрузка…');
+                    return true;
+                }
                 busy = true;
                 function step() {
                     if (current !== ticket || destroyed) return;
@@ -1887,37 +2144,101 @@
                         if (pending.length < pageSize && queue.hasMore()) { setTimeout(step, 0); return; }
                     }
                     var latest = pending.splice(0, pageSize);
-                    latest.forEach(function (entry) {
-                        row(entry.card, entry.reasons[1] || entry.reasons[0], lane.grid).addClass('anime-taste__suggestion');
+                    var added = latest.map(function (entry) {
+                        var card = row(entry.card, entry.reasons[1] || entry.reasons[0], grid);
+                        return (tag ? card : card.addClass('anime-taste__suggestion'))[0];
                     });
-                    more.detach();
-                    if (pending.length || queue.hasMore()) more.appendTo(lane.header);
-                    if (!lane.grid.children().length) $('<div class="anime-taste__message"></div>').text('Подходящих аниме пока нет.').appendTo(lane.grid);
+                    if (!grid.children().length) $('<div class="anime-taste__message"></div>').text('Подходящих аниме пока нет.').appendTo(grid);
                     busy = false;
-                    if (moveFocus && latest.length) focusId = latest[0].card.id;
-                    focus();
+                    status.empty();
+                    var target = advance && grid.children('.focus').length && added[0];
+                    advance = false;
+                    if (active && Lampa.Controller.enabled().name === 'content' && added.length) {
+                        Lampa.Controller.collectionAppend($(added));
+                        if (target) Lampa.Controller.collectionFocus(target, workspace);
+                    }
                 }
-                if (moveFocus && pending.length < pageSize && queue.hasMore()) {
-                    more.text('Загрузка…');
-                    setTimeout(function () { more.text('Показать ещё'); step(); }, 0);
-                } else step();
+                if (moveFocus) status.text('Загрузка…');
+                if (grid.children().length && pending.length < pageSize && queue.hasMore()) setTimeout(step, 0);
+                else step();
+                return true;
             }
             append(false);
         }
 
+        function genreShelves(profile, current, model, suggestions) {
+            var available = GENRE_ROWS.filter(function (pair) {
+                return (db.tags[pair[0]] || []).some(function (card) {
+                    return visible(card, prefs.disputed) && !card.upcoming && !profile.excluded[card.id];
+                });
+            });
+            var cursor = 0;
+            var sentinel = $('<div class="anime-taste__sentinel" aria-hidden="true"></div>');
+            function mount() {
+                if (destroyed || current !== ticket || cursor >= available.length) return;
+                if (genreObserver) genreObserver.unobserve(sentinel[0]);
+                sentinel.detach();
+                var pair = available[cursor++];
+                var genre = pair[0], position = cursor;
+                var matching = profile.seeds.filter(function (seed) { return seed.card.tags.indexOf(genre) >= 0; });
+                var seeds = (matching.length ? matching : profile.seeds).slice(0, 4);
+                var queue = recommendationQueue(db, seeds, profile.excluded, prefs.disputed, 'all',
+                    profile.negative.slice(0, 3), suggestions, model, genre);
+                pagedShelf(pair[1], queue, current, genre, function () { if (position === cursor) mount(); });
+                if (cursor < available.length && genreObserver) {
+                    sentinel.appendTo(results);
+                    genreObserver.observe(sentinel[0]);
+                }
+            }
+            if (window.IntersectionObserver) genreObserver = new window.IntersectionObserver(function (entries) {
+                if (active && entries.some(function (entry) { return entry.isIntersecting; })) mount();
+            }, {root: scroll.render(true), rootMargin: '0px 0px 180px 0px'});
+            mount();
+        }
+
         function moveAcross(direction) {
+            var tab = toolbar.children('.focus').first();
+            var adjacentTab = direction === 'right' ? tab.next('.selector') : tab.prev('.selector');
+            if (adjacentTab.length) { Lampa.Controller.collectionFocus(adjacentTab[0], workspace); return; }
             var selected = workspace.find('.anime-taste__shelf .anime-taste__row.focus').first();
             if (selected.length) {
                 var next = direction === 'right' ? selected.next('.anime-taste__row') : selected.prev('.anime-taste__row');
                 if (next.length) { Lampa.Controller.collectionFocus(next[0], workspace); return; }
                 var more = selected.parent().data('tasteMore');
-                if (direction === 'right' && more && more()) return;
+                if (direction === 'right' && more && more(true)) return;
             }
             if (window.Navigator.canmove(direction)) window.Navigator.move(direction);
             else if (direction === 'left') Lampa.Controller.toggle('menu');
         }
 
-        function localState(saved, watch) { return JSON.stringify([saved, watch, guidance()]); }
+        function moveVertical(direction) {
+            var selected = workspace.find('.anime-taste__shelf .anime-taste__row.focus').first();
+            var section = selected.closest('.anime-taste__shelf');
+            var next = direction === 'down' ? section.next('.anime-taste__shelf') : section.prev('.anime-taste__shelf');
+            if (next.length) {
+                var track = next.find('.anime-taste__grid')[0];
+                var bounds = track.getBoundingClientRect();
+                var box = selected[0].getBoundingClientRect();
+                var center = (box.left + box.right) / 2;
+                var nearest, distance = Infinity;
+                next.find('.anime-taste__row').each(function () {
+                    var card = this.getBoundingClientRect();
+                    if (!card.width || card.right <= bounds.left || card.left >= bounds.right) return;
+                    var offset = Math.abs((card.left + card.right) / 2 - center);
+                    if (offset < distance) { nearest = this; distance = offset; }
+                });
+                if (nearest) { Lampa.Controller.collectionFocus(nearest, workspace); return; }
+            }
+            if (direction === 'up' && section.length && !next.length) {
+                var tab = toolbar.children('.is-current').first()[0] || toolbar.children('.selector')[0];
+                if (tab) { Lampa.Controller.collectionFocus(tab, workspace); return; }
+            }
+            if (window.Navigator.canmove(direction)) window.Navigator.move(direction);
+            else if (direction === 'down') scroll.wheel(160);
+            else Lampa.Controller.toggle('head');
+        }
+
+        function localState(saved, watch) { return JSON.stringify([saved, watch, guidance(), reviews()]); }
 
         function historyLabel(entry) {
             var stats = watchStats(entry);
@@ -1932,6 +2253,8 @@
 
         function refresh() {
             var current = ++ticket;
+            if (genreObserver) { genreObserver.disconnect(); genreObserver = null; }
+            if (cardObserver) cardObserver.disconnect();
             var saved = data();
             lastStorageState = localState(saved, savedHistory());
             drawToolbar();
@@ -1945,7 +2268,8 @@
             if (mode === 'recommendations' || mode === 'similar') {
                 catalog().then(function (indexed) { if (!Object.keys(indexed.story).length) return loadStories(indexed); }).catch(function () {});
             }
-            Promise.all([catalog(), profileRequest]).then(function (ready) {
+            var translated = catalog().then(function (indexed) { return deadline(loadRussianTitles(indexed), null, 1500).then(function () { return indexed; }); });
+            Promise.all([translated, profileRequest]).then(function (ready) {
                 if (current !== ticket || destroyed) return;
                 db = ready[0];
                 account = ready[1];
@@ -1967,16 +2291,20 @@
                         refresh();
                     }).appendTo(results);
                     button('Мои оценки', function () { show('feedback'); }).appendTo(results);
+                    button('Мои отзывы', function () { show('reviews'); }).appendTo(results);
                     focus();
                     return;
                 }
-                if (mode === 'favorites' || mode === 'hidden' || mode === 'history' || mode === 'feedback') {
-                    var listing = mode === 'favorites' ? prefs.likes : mode === 'hidden' ? prefs.hidden : mode === 'feedback' ? prefs.feedback : watch;
+                if (mode === 'favorites' || mode === 'hidden' || mode === 'history' || mode === 'feedback' || mode === 'reviews') {
+                    var listing = mode === 'favorites' ? prefs.likes : mode === 'hidden' ? prefs.hidden : mode === 'feedback' ? prefs.feedback :
+                        mode === 'reviews' ? prefs.reviews : watch;
                     var ids = Object.keys(listing).filter(function (id) { return db.ids[id] && visible(db.ids[id], prefs.disputed); });
                     if (mode === 'favorites') ids.sort(function (a, b) { return listing[b] - listing[a]; });
                     if (mode === 'history') ids.sort(function (a, b) { return listing[b].last - listing[a].last; });
+                    if (mode === 'reviews') ids.sort(function (a, b) { return listing[b].when - listing[a].when; });
                     var empty = {favorites: 'Выберите аниме в поиске и нажмите «В любимое».', feedback: 'Оценок пока нет.',
-                        hidden: 'Скрытых аниме пока нет.', history: 'История пока пуста. Здесь появится аниме с сохранённым прогрессом.'};
+                        reviews: 'Вы ещё не оставили отзывов.', hidden: 'Скрытых аниме пока нет.',
+                        history: 'История пока пуста. Здесь появится аниме с сохранённым прогрессом.'};
                     message.text(ids.length ? 'Тайтлов в списке — ' + ids.length : empty[mode]);
                     if (mode === 'history') {
                         var unresolved = guidance().unresolved;
@@ -1992,7 +2320,8 @@
                         ids.slice(start, start + 50).forEach(function (id) {
                             var labels = {positive: 'Больше такого', negative: 'Не моё', seen: 'Уже видел'};
                             row(db.ids[id], mode === 'history' ? historyLabel(watch[id]) :
-                                mode === 'feedback' ? labels[prefs.feedback[id].action] : '');
+                                mode === 'feedback' ? labels[prefs.feedback[id].action] :
+                                mode === 'reviews' ? prefs.reviews[id].text : '');
                         });
                         if (start + 50 < ids.length) {
                             var more = button('Показать ещё', function () {
@@ -2007,19 +2336,30 @@
                     return;
                 }
                 if (mode === 'card') {
-                    row(source);
-                    synopsis(source).then(function (description) {
-                        if (description && current === ticket && !destroyed) message.text(description);
+                    var details = row(source);
+                    var savedView = watch[source.id];
+                    synopsis(db, source, savedView, prefs.supplemental[source.id] || savedView && savedView.yani).then(function (description) {
+                        if (current !== ticket || destroyed) return;
+                        details.find('.anime-taste__title').text(displayTitle(source));
+                        message.text(description || 'Описание на русском пока недоступно.');
+                        if (active && details.hasClass('focus')) scroll.update(details, true);
                     });
-                    message.text(source.tags.slice(0, 6).map(tagLabel).join(' · '));
+                    message.text('Загружаем описание на русском…');
+                    reviewControls(source, results);
                     focus();
                     return;
                 }
-                if (mode === 'mark' || mode === 'search' || mode === 'bind') {
-                    var exact = mode === 'mark' && matchCatalog(db, source);
+                if (mode === 'mark' || mode === 'search' || mode === 'bind' || mode === 'review') {
+                    var exact = (mode === 'mark' || mode === 'review') && matchCatalog(db, source);
                     if (exact) {
+                        if (mode === 'review') {
+                            message.text(displayTitle(exact));
+                            reviewControls(exact, results);
+                            focus();
+                            return;
+                        }
                         var selected = Boolean(prefs.likes[exact.id]);
-                        message.text(exact.title);
+                        message.text(displayTitle(exact));
                         button(selected ? '♥ Убрать из любимого' : '♡ В любимое', function () {
                             setPreference(db, exact, 'likes', !selected);
                             Lampa.Noty.show(selected ? 'Убрано из «Моё любимое»' : 'Добавлено в «Моё любимое»');
@@ -2030,7 +2370,7 @@
                     }
                     var value = query;
                     if (mode === 'bind' && !value) value = source.source.original_name || source.source.name || '';
-                    if (mode === 'mark' && source) {
+                    if ((mode === 'mark' || mode === 'review') && source) {
                         var year = source.year || String(source.first_air_date || source.release_date || '').slice(0, 4);
                         value = String(source.title || source.name || source.original_name || '') + (year ? ' ' + year : '');
                     }
@@ -2043,28 +2383,25 @@
                         return;
                     }
                     message.text(matches.length ? (mode === 'bind' ? 'Выберите аниме для привязки истории.' : mode === 'mark' ?
-                        'Выберите аниме и нажмите «В любимое».' : 'Совпадения по запросу «' + value + '».') :
+                        'Выберите аниме и нажмите «В любимое».' : mode === 'review' ? 'Выберите аниме для отзыва.' :
+                            'Совпадения по запросу «' + value + '».') :
                         'Подходящих аниме нет. Попробуйте другое название.');
                     matches.forEach(function (entry) { row(entry.card); });
                     if (matches.length && mode === 'search' && matches[0].score >= 90) {
                         var best = matches[0].card;
-                        button('Похожие на «' + best.title + '»', function () { openTaste('similar', best); }).appendTo(results);
+                        button('Похожие на «' + displayTitle(best) + '»', function () { openTaste('similar', best); }).appendTo(results);
                     }
                     focus();
                     return;
                 }
                 var anchor = mode === 'similar' ? source : interest && db.ids[interest];
                 var profile = tasteProfile(db, prefs, watch, anchor);
-                if (!profile.seeds.length) {
-                    message.text('Посмотрите аниме в Lampa или отметьте любимые тайтлы, чтобы получить рекомендации.');
-                    return;
-                }
                 if (mode === 'recommendations' && profile.signals.length) {
                     interests.show();
                     button('Все интересы', function () { selectInterest(null); })
                         .toggleClass('is-current', !interest).appendTo(interests);
                     profile.signals.slice(0, 6).forEach(function (seed) {
-                        button('Как «' + seed.card.title + '»', function () { selectInterest(seed.card.id); })
+                        button('Как «' + displayTitle(seed.card) + '»', function () { selectInterest(seed.card.id); })
                             .toggleClass('is-current', interest === seed.card.id).appendTo(interests);
                     });
                 }
@@ -2080,18 +2417,18 @@
                 function renderList(loaded) {
                     if (current !== ticket || destroyed) return;
                     var predict = tasteNetwork(db, profile.signals, profile.negative);
+                    var model = {predict: predict, review: Object.keys(profile.topics).length ? profile.topics : null,
+                        anchored: Boolean(anchor)};
                     var queue = recommendationQueue(db, seeds, profile.excluded, prefs.disputed, flavor,
-                        profile.negative.slice(0, 6), loaded[1], predict && {predict: predict, anchored: Boolean(anchor)});
+                        profile.negative.slice(0, 6), loaded[1], model);
                     message.empty();
-                    var title = anchor ? 'Как «' + anchor.title + '»' : 'Аниме по вашему вкусу';
+                    var title = anchor ? 'Как «' + displayTitle(anchor) + '»' : 'Аниме по вашему вкусу';
                     var subtitle = anchor ? (flavor === 'all' ? anchor.tags.filter(function (tag) { return GENRE.test(tag); })
-                        .slice(0, 4).map(tagLabel).join(' · ') : FOCUS[flavor]) : 'По избранному, истории и оценкам';
-                    displayHero(title, anchor || seeds[0].card, subtitle);
+                        .slice(0, 4).map(tagLabel).join(' · ') : FOCUS[flavor]) : seeds.length ?
+                            'По избранному, истории, оценкам и отзывам' : 'Добавьте любимые аниме, чтобы настроить подбор';
+                    displayHero(title, anchor || (seeds[0] && seeds[0].card), subtitle);
                     pagedShelf(anchor ? 'Похожие аниме' : 'Рекомендации для вас', queue, current);
-                    if (!anchor && profile.next.length) {
-                        var seasons = shelf('Следующие сезоны');
-                        profile.next.forEach(function (card) { row(card, '', seasons.grid); });
-                    }
+                    if (!anchor) genreShelves(profile, current, model, loaded[1]);
                     focus();
                 }
                 var story = Object.keys(db.story).length ? Promise.resolve() : deadline(loadStories(db), null, 3500);
@@ -2115,8 +2452,8 @@
                 toggle: focus,
                 left: function () { moveAcross('left'); },
                 right: function () { moveAcross('right'); },
-                up: function () { if (window.Navigator.canmove('up')) window.Navigator.move('up'); else Lampa.Controller.toggle('head'); },
-                down: function () { if (!window.Navigator.move('down')) scroll.wheel(160); },
+                up: function () { moveVertical('up'); },
+                down: function () { moveVertical('down'); },
                 back: function () { Lampa.Activity.backward(); }
             });
             Lampa.Controller.toggle('content');
@@ -2128,12 +2465,14 @@
             destroyed = true;
             active = false;
             ticket++;
+            if (genreObserver) genreObserver.disconnect();
+            if (cardObserver) cardObserver.disconnect();
             window.cancelAnimationFrame(focusFrame);
             scroll.destroy();
         };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.3.2', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.4.0', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
