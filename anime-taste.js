@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.3.0 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.3.1 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -286,10 +286,6 @@
                 next: row[15] || '', tmdb: row[16] || null, upcoming: Boolean(row[17])};
             db.cards.push(card);
             db.ids[card.id] = card;
-            (db.families[card.family] || (db.families[card.family] = [])).push(card);
-            var root = db.entries[card.family];
-            if ((card.type === 'TV' || card.type === 'ONA') && card.year && !card.upcoming &&
-                !card.restricted && (!root || card.year < root.year)) db.entries[card.family] = card;
             (row[11] || []).forEach(function (id) { if (!db.ids[id]) db.ids[id] = card; });
             if (card.tmdb) (db.tmdb[card.tmdb[0]] || (db.tmdb[card.tmdb[0]] = [])).push(card);
             names.forEach(function (name) { (db.names[name] || (db.names[name] = [])).push(card); });
@@ -297,6 +293,23 @@
                 db.frequency[tag] = (db.frequency[tag] || 0) + 1;
                 (db.tags[tag] || (db.tags[tag] = [])).push(card);
             });
+        });
+        db.cards.forEach(function (card) {
+            // Reconcile a subtitled sequel only when both records link to each other.
+            var separator = card.title.indexOf(': ');
+            if (separator < 0 || card.family !== card.id || !card.year) return;
+            var base = normalTitle(card.title.slice(0, separator));
+            var original = card.related.map(function (id) { return db.ids[id]; }).filter(function (prior) {
+                return prior && prior.type === card.type && prior.year > 0 && prior.year < card.year &&
+                    normalTitle(prior.title) === base && prior.related.indexOf(card.id) >= 0;
+            })[0];
+            if (original) card.family = original.family;
+        });
+        db.cards.forEach(function (card) {
+            (db.families[card.family] || (db.families[card.family] = [])).push(card);
+            var root = db.entries[card.family];
+            if ((card.type === 'TV' || card.type === 'ONA') && card.year && !card.upcoming &&
+                !card.restricted && (!root || card.year < root.year)) db.entries[card.family] = card;
         });
         return db;
     }
@@ -786,6 +799,8 @@
     var accountCache;
     var yummyCache = maps();
     var catalogRequest;
+    var catalogCache;
+    var catalogRetry = false;
     var storyRequest;
     var plotCache = maps();
     var nativeCache = maps();
@@ -868,7 +883,7 @@
                     if (loaded[part]) resolve(loaded[part]);
                     else reject(new Error('Часть каталога недоступна'));
                 }
-                var timer = setTimeout(finish, 6500);
+                var timer = setTimeout(finish, 10000);
                 script.onload = script.onerror = finish;
                 script.async = true;
                 script.src = host + 'anime-assets-v32/catalog-' + part + '.js';
@@ -900,15 +915,59 @@
         return raw;
     }
 
+    function catalogueStorage(raw) {
+        if (!window.indexedDB) return Promise.resolve(null);
+        if (!catalogCache) catalogCache = new Promise(function (resolve) {
+            try {
+                var open = window.indexedDB.open('anime-taste-catalog', 1);
+                open.onupgradeneeded = function () { open.result.createObjectStore('assets'); };
+                open.onsuccess = function () { resolve(open.result); };
+                open.onerror = open.onblocked = function () { resolve(null); };
+            } catch (error) { resolve(null); }
+        });
+        return catalogCache.then(function (cache) {
+            if (!cache) return null;
+            return new Promise(function (resolve) {
+                try {
+                    var transaction = cache.transaction('assets', raw ? 'readwrite' : 'readonly');
+                    var store = transaction.objectStore('assets');
+                    var task = raw ? store.put({stored: Date.now(), data: raw}, 'catalogue-v3') : store.get('catalogue-v3');
+                    transaction.oncomplete = function () { resolve(raw ? null : task.result); };
+                    transaction.onerror = transaction.onabort = function () { resolve(null); };
+                } catch (error) { resolve(null); }
+            });
+        });
+    }
+
+    function downloadCatalogue() {
+        var suffix = catalogRetry ? '?retry=' + Date.now() : '';
+        return requestJson(CATALOG + suffix, 18000).then(validateCatalog).catch(function () {
+            return catalogParts().then(validateCatalog);
+        }).catch(function () {
+            return requestJson(ASSET_MIRROR + 'anime-catalog-3.json', 15000).then(validateCatalog);
+        }).catch(function () {
+            return requestJson(ASSET_RAW + 'anime-catalog-3.json', 15000).then(validateCatalog);
+        });
+    }
+
     function catalog() {
         if (!catalogRequest) {
-            catalogRequest = requestJson(CATALOG, 7500).then(validateCatalog).catch(function () {
-                return catalogParts().then(validateCatalog);
-            }).catch(function () {
-                return requestJson(ASSET_MIRROR + 'anime-catalog-3.json', 10000).then(validateCatalog);
-            }).catch(function () {
-                return requestJson(ASSET_RAW + 'anime-catalog-3.json', 10000).then(validateCatalog);
+            catalogRequest = deadline(catalogueStorage(), null, 1100).then(function (record) {
+                var cached;
+                if (record) {
+                    try { cached = validateCatalog(record.data); }
+                    catch (error) { cached = null; }
+                }
+                if (cached && Date.now() - record.stored < 7 * 86400000) return cached;
+                return downloadCatalogue().then(function (raw) {
+                    catalogueStorage(raw);
+                    return raw;
+                }).catch(function (error) {
+                    if (cached) return cached;
+                    throw error;
+                });
             }).then(indexCatalog).catch(function () {
+                catalogRetry = true;
                 catalogRequest = null;
                 throw new Error('Не удалось получить каталог с основного сервера и зеркала. Повторите попытку.');
             });
@@ -1624,7 +1683,7 @@
             '.anime-taste .anime-taste__button.is-current{background:#677891;color:#fff}',
             '.anime-taste .anime-taste__button.focus{background:#f6f8fc;color:#172032}',
             '.anime-taste__hero{position:relative;overflow:hidden;display:flex;align-items:flex-end;min-height:8.4em;margin:.5em 0 .9em;padding:1em 1.3em;border-radius:.85em;background:#465570}',
-            '.anime-taste__hero .card__img{position:absolute;right:0;top:0;width:55%;height:100%;object-fit:cover;object-position:50% 33%}',
+            '.anime-taste__hero .card__img{position:absolute;right:0;left:auto;top:0;width:55%;height:100%;object-fit:cover;object-position:50% 33%}',
             '.anime-taste__hero:after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:linear-gradient(90deg,#465570 44%,rgba(70,85,112,0) 83%);pointer-events:none}',
             '.anime-taste__hero-copy{position:relative;z-index:1;width:66%;text-shadow:0 1px 3px #30394d}',
             '.anime-taste__hero-title{font-size:1.85em;font-weight:700;line-height:1.12}',
@@ -2059,7 +2118,7 @@
         page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.3.0', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.3.1', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });

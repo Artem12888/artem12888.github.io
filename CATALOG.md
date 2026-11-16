@@ -47,7 +47,10 @@ integration under **Настройки подбора → Дополнение Y
 Run `node build-catalog-parts.cjs` after refreshing the v3 catalogue.
 The generated `anime-assets-v32/catalog-*.js` files provide a script-loading
 fallback on TV builds where the catalogue JSON cannot be fetched with XHR.
-The plugin also uses a jsDelivr mirror of the same repository.
+The plugin also uses a jsDelivr mirror of the same repository. After a
+successful download it keeps the full catalogue in IndexedDB on the device.
+A cache under seven days old is used immediately. After that a refresh is
+attempted and the saved catalogue remains usable if the download fails.
 
 Open **Аниме** from Lampa's main menu. The plugin handles the native Anime
 category route and presents its recommendations, search, favourites and
