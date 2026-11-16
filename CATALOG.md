@@ -36,3 +36,10 @@ The Python build requires `numpy`, `onnxruntime` and `tokenizers`. Source
 response caches stay on the build machine. The refresh script prepares the
 files for publication. Viewing, matching decisions and feedback stay in
 Lampa storage on the client. YummyAnime is an optional additional source.
+
+When the installed YummyAnime plugin has an authenticated profile, Anime
+Taste can use its favourites and the registered plugin's recommendation
+endpoint. Suggested titles are matched against the local catalogue. A weak
+match stays below the autonomous recommendations. The user can disable the
+integration under **Настройки подбора → Дополнение YummyAnime**.
+[YummyAnime API documentation](https://api.yani.tv/).

@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.0.0 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.1.0 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -41,6 +41,31 @@
         [/^psychological$|battle of wits/, /moral|judge|justice|law and order|social commentary/, /^supernatural$|^thriller$|^mystery$/],
         [/time travel|time loop/, /revenge|redemption|detective|conspiracy/, /drama|psychological|thriller|mystery/],
         [/^isekai$|alternative world|fantasy world/, /found family|^journey$|^adventure$/, /^magic$|mytholog|^demon$/]
+    ];
+    // Weighted anchor evidence identifies the premise across synonymous catalogue tags.
+    var PREMISES = [
+        {label:'петли и путешествия во времени', anchors:[/^time (?:travel|loop|machine|manipulation)$/, /^sci fi$|parallel (?:world|universe|dimension)|different timelines/],
+            context:[/^sci fi$|^time manipulation$/, /^psychological$|^thriller$|^mystery$/, /^drama$|tragedy|romance/], minimum:2, emphasis:1.35},
+        {label:'музыка и выступления', anchors:[/^music$|rock music|^idol$/, /^band$|^bands$|musical band|orchestra|musical performance|performing arts|music club/],
+            context:[/^school$|high school|school club|coming of age/, /female protagonist|primarily female cast|cute girls doing cute things/, /^slice of life$|^comedy$|iyashikei/], minimum:2},
+        {label:'преступления и расследования', anchors:[/^crime$|crime fiction|^detective$|^police$/, /battle of wits|serial killer|conspiracy|detective|investigation/, /^psychological$|^mystery$|^thriller$/],
+            context:[/^psychological$|^thriller$|^mystery$/, /morality|justice|tragedy|philosophy|psychological/, /protagonist|ensemble cast|anti ?hero/], minimum:3, emphasis:1.16},
+        {label:'выживание и масштабный конфликт', anchors:[/^war$|military|rebellion|warfare|political conflict/,
+            /post apocaly|dystopi|^survival$|isolated society/, /^action$|combat|swordplay/, /^fantasy$|^supernatural$|superpowers|body horror/],
+            context:[/tragedy|conspiracy|politics|revenge|^thriller$/, /monster|demon|^magic$|^superpowers$|body horror/], minimum:4, emphasis:1.23},
+        {label:'суеверия и легенды', anchors:[/^folklore$|mytholog|youkai|yokai|^spirits?$/, /episodic|iyashikei|^slice of life$|^supernatural$/],
+            context:[/^supernatural$|^fantasy$|ghost|youkai/, /episodic|^slice of life$|iyashikei/, /rural|travel|historical|^mystery$|^drama$/], minimum:2},
+        {label:'командные соревнования', anchors:[/^sports$|team sport|volleyball|basketball|baseball/, /team sport|teamwork|rivalry|tournament|competition/],
+            context:[/school|coming of age/, /male protagonist|ensemble cast|primarily male/, /^drama$|^comedy$/], minimum:2},
+        {label:'школа и сверхъестественные сражения', anchors:[/school|academy/, /magic|^demon$|^urban fantasy$|^supernatural$/, /^action$|combat|fighting/],
+            context:[/^action$|combat|fighting/, /^ecchi$|harem|^comedy$/, /^magic$|demons|^urban fantasy$|angels/], minimum:3},
+        {label:'сверхъестественные сражения и гаремная комедия', anchors:[/school|academy/, /magic|^demon$|^urban fantasy$|^supernatural$/,
+            /^action$|combat|fighting/, /harem/, /^ecchi$|^comedy$/],
+            context:[/^ecchi$/, /harem/, /angels|^demon$|^magic$|^urban fantasy$/], minimum:5, emphasis:1.29},
+        {label:'путешествия и повседневность', anchors:[/outdoor activities|camping|travel|hiking|^rural$/, /^slice of life$|iyashikei|episodic/],
+            context:[/female protagonist|cute girls doing cute things|primarily female/, /^comedy$|iyashikei|episodic/, /food|camping|travel|outdoor/], minimum:2},
+        {label:'приключение в магическом мире', anchors:[/^adventure$|^journey$|travel/, /^fantasy$|^magic$|^demon$|^elf$/],
+            context:[/found family|adventure|^travel$|^journey$/, /^drama$|^slice of life$|philosophy/, /protagonist|coming of age|ensemble cast/], minimum:2}
     ];
     var VARIANTS = {'science fiction': 'sci fi', 'dystopian': 'dystopia', 'post apocalypse': 'post apocalyptic',
         'mind games': 'battle of wits', 'rivalries': 'rivalry', 'detectives': 'detective', 'demons': 'demon',
@@ -102,6 +127,8 @@
     }
 
     function normalTitle(value) {
+        var original = String(value || '').trim();
+        if (/^[◯○●△▲▽▼◇◆□■★☆]+$/.test(original)) return original.replace(/○/g, '◯');
         return clean(value).replace(/\b(?:no|number)\s+(?=\d)/g, '')
             .replace(/(^| )номер ([^ ]+)/g, function (all, space, next) {
                 return NUMBERS[next] || /^\d+$/.test(next) ? space + (NUMBERS[next] || next) : all;
@@ -124,7 +151,7 @@
     }
 
     function parseQuery(value) {
-        var raw = String(value || '').trim().slice(0, 100);
+        var raw = String(value || '').trim().slice(0, 360);
         var yearMatch = raw.match(/(?:^|\s|\()(19\d{2}|20\d{2})\)?$/);
         var title = yearMatch && yearMatch.index > 0 ? raw.slice(0, yearMatch.index).trim() : raw;
         var year = title === raw ? 0 : Number(yearMatch[1]);
@@ -134,7 +161,8 @@
         var layoutExpanded = property(ABBREVIATIONS, clean(layout));
         var normalized = normalTitle(title);
         var requests = unique([expanded || layoutExpanded || (normalized !== clean(title) ? normalized : title), title, layout]).slice(0, 3);
-        var variants = unique([expanded, layoutExpanded, title, layout].map(normalTitle));
+        var spelling = title.replace(/[хХ]/g, 'x').replace(/[×✕]/g, 'x');
+        var variants = unique([expanded, layoutExpanded, title, layout, spelling].map(normalTitle));
         return {year: year, requests: variants.length ? requests : [], variants: variants};
     }
 
@@ -161,10 +189,14 @@
         if (title.indexOf(query + ' ') === 0) return 80;
         if ((' ' + title + ' ').indexOf(' ' + query + ' ') >= 0) return 72;
         var words = query.split(' ');
-        if (words.length > 1 && words.every(function (word) { return title.split(' ').indexOf(word) >= 0; })) return 67;
+        var titleWords = title.split(' ');
+        if (words.length > 1 && words.length === titleWords.length &&
+            words.every(function (word) { return titleWords.indexOf(word) >= 0; })) return 67;
+        var tightQuery = query.replace(/ /g, '');
+        if (tightQuery.length >= 5 && tightQuery === title.replace(/ /g, '')) return 89;
         if (query.length < 4 || title.length > 120) return 0;
         var edits = query.length > 9 ? 2 : 1;
-        var comparable = title.split(' ').slice(0, words.length).join(' ');
+        var comparable = titleWords.slice(0, words.length).join(' ');
         if (Math.abs(query.length - comparable.length) <= edits && distance(query, comparable) <= edits) {
             return comparable === title ? 64 : 58;
         }
@@ -174,8 +206,7 @@
     function match(query, card) {
         var score = 0;
         query.variants.forEach(function (variant, index) {
-            card.titles.forEach(function (title) {
-                var candidate = normalTitle(title);
+            card.indexed.forEach(function (candidate) {
                 var numbers = variant.split(' ').filter(function (part) { return /^\d+$/.test(part); });
                 if (numbers.some(function (number) { return candidate.split(' ').indexOf(number) < 0; })) return;
                 score = Math.max(score, titleScore(variant, candidate) - Math.min(index, 1) * 2);
@@ -288,9 +319,17 @@
         var result = rankSearch(query, collect(eligible), likes);
         if (!result.length && raw.length >= 5) {
             // Handle a typo in the first two letters without testing every alias with edit distance.
-            var tail = raw.split(' ')[0].slice(-3);
+            var tokens = unique(raw.split(' ').filter(function (part) { return part.length >= 3; }));
+            var trigrams = [];
+            tokens.forEach(function (part) {
+                for (var offset = 0; offset <= part.length - 3; offset++) trigrams.push(part.slice(offset, offset + 3));
+            });
+            var first = raw.split(' ')[0];
             result = rankSearch(query, collect(names.filter(function (name) {
-                return name.split(' ')[0].slice(-3) === tail;
+                var lead = name.split(' ')[0];
+                return Math.abs(lead.length - first.length) <= 2 && trigrams.some(function (part) {
+                    return name.indexOf(part) >= 0;
+                });
             })), likes);
         }
         return result.slice(0, 24);
@@ -342,12 +381,21 @@
         var motifs = MOTIFS.map(function (pattern) {
             return pattern.every(function (part) { return all.some(function (tag) { return part.test(tag); }); });
         });
+        var premises = PREMISES.map(function (group) {
+            function count(patterns) {
+                return patterns.reduce(function (total, pattern) {
+                    return total + Number(all.some(function (tag) { return pattern.test(tag); }));
+                }, 0);
+            }
+            var anchors = count(group.anchors), context = count(group.context);
+            return {anchors: anchors, context: context, eligible: anchors >= group.minimum && context >= 2};
+        });
         return {genres: genres, world: world, plot: plot, themes: themes,
-            mood: mood, characters: characters, motifs: motifs};
+            mood: mood, characters: characters, motifs: motifs, premises: premises};
     }
 
     function overlap(left, right, rarity) {
-        var total = 0, shared = [];
+        var total = 0, seedTotal = 0, shared = [];
         var keys = Object.keys(left).concat(Object.keys(right).filter(function (key) { return !left[key]; }));
         keys.forEach(function (key) {
             if (!left[key] || !right[key]) return;
@@ -355,8 +403,10 @@
             shared.push({key: key, weight: weight});
             total += weight;
         });
+        Object.keys(left).forEach(function (key) { seedTotal += rarity(key); });
         shared.sort(function (a, b) { return b.weight - a.weight; });
-        return {score: keys.length ? total / keys.length : 0, shared: shared.map(function (row) { return row.key; })};
+        return {score: keys.length ? total / keys.length : 0, coverage: seedTotal ? total / seedTotal : 0,
+            shared: shared.map(function (row) { return row.key; })};
     }
 
     function explain(label, matches) {
@@ -391,11 +441,35 @@
         if (similarity > 0.25 && (focus === 'plot' || !reasons.length)) {
             reasons.unshift(bothDescriptions ? 'Сходство сюжетных описаний' : 'Сходство сюжетных тем');
         }
+        var available = [left.genres, left.world, left.plot, left.themes, left.mood, left.characters];
+        var comparable = axes.reduce(function (sum, axis, index) {
+            var prior = Object.keys(available[index]).length;
+            return prior ? sum + weights[index] : sum;
+        }, 0);
+        var core = axes.reduce(function (sum, axis, index) {
+            return sum + Math.sqrt(axis.coverage) * weights[index];
+        }, 0);
+        // Extra metadata on the candidate should not drown out matching facets.
+        var breadth = comparable ? core / comparable : 0;
+        score += breadth * 0.15 + Math.min(genres.coverage, Math.max(plot.coverage, world.coverage, mood.coverage)) * 0.08;
+        var match = 0, premise;
+        left.premises.forEach(function (part, index) {
+            if (!part.eligible) return;
+            var other = right.premises[index], expected = PREMISES[index];
+            var anchorCoverage = Math.min(1, other.anchors / expected.minimum);
+            var contextCoverage = Math.min(1, other.context / part.context);
+            var agreement = anchorCoverage * anchorCoverage * (0.52 + 0.48 * contextCoverage) * (expected.emphasis || 1);
+            if (agreement > match) { match = agreement; premise = expected; }
+        });
+        if (match && (focus === 'all' || focus === 'plot')) {
+            score += (focus === 'plot' ? 0.22 : 0.26) * match;
+            if (match >= 0.90 && premise) reasons.unshift('Общая основа — ' + premise.label);
+        }
         return {score: score, specific: world.shared.length + plot.shared.length + themes.shared.length
                 + mood.shared.length + cast.shared.length + Number(similarity > 0.15), reasons: reasons};
     }
 
-    function rankTaste(db, seeds, candidates, descriptions, focus, negative) {
+    function rankTaste(db, seeds, candidates, descriptions, focus, negative, assistance, autonomous) {
         function rarity(key) {
             return Math.min(1.65, 0.45 + Math.log((db.cards.length + 1) / ((db.frequency[key] || 0) + 1)) * 0.2);
         }
@@ -428,9 +502,30 @@
                 var similarity = compareTaste(seed, candidate, rarity, 'all', seed.neighbors[card.id] || 0).score;
                 return Math.max(highest, Math.max(0, similarity - 0.17) * 0.42);
             }, 0);
-            return {card: card, score: primary.score + 0.12 * agreement + 0.002 * card.rating - penalty,
+            var signal = assistance && assistance[card.id] || 0;
+            var bonus = signal && primary.score >= 0.28 ? Math.min(0.075, 0.06 * signal + Math.min(0.012, primary.score * 0.012)) : 0;
+            return {card: card, score: primary.score + 0.12 * agreement + 0.002 * card.rating - penalty, bonus: bonus,
                 reasons: ['Похоже на «' + primary.seed + '»'].concat(primary.reasons.slice(0, 3))};
         }).filter(Boolean).sort(function (a, b) { return b.score - a.score || a.card.id.localeCompare(b.card.id); });
+        if (autonomous) {
+            var baselineFamilies = maps();
+            var baseline = ranked.filter(function (entry) {
+                if (!autonomous[entry.card.id] || entry.score <= 0 || baselineFamilies[entry.card.family]) return false;
+                baselineFamilies[entry.card.family] = true;
+                return true;
+            });
+            var cutoff = baseline.length >= 10 ? baseline[9].score * 0.96 : 0.28;
+            ranked = ranked.filter(function (entry) {
+                return autonomous[entry.card.id] || entry.score >= cutoff;
+            });
+            ranked.forEach(function (entry) {
+                if (entry.bonus && entry.score >= cutoff) {
+                    entry.score += entry.bonus;
+                    entry.reasons.push('Также советует YummyAnime');
+                }
+            });
+            ranked.sort(function (a, b) { return b.score - a.score || a.card.id.localeCompare(b.card.id); });
+        }
         var shown = maps();
         return ranked.filter(function (entry) {
             if (shown[entry.card.family]) return false;
@@ -439,14 +534,19 @@
         });
     }
 
-    function recommend(db, seeds, excluded, disputed, focus, negative) {
-        var scores = maps(), neighbors = maps();
+    function recommend(db, seeds, excluded, disputed, focus, negative, suggestions) {
+        var scores = maps(), neighbors = maps(), assistance = maps();
         function eligible(card) { return card && !card.upcoming && visible(card, disputed) && !excluded[card.id]; }
+        function canonical(card) {
+            var first = card && db.entries[card.family];
+            return eligible(first) ? first : card;
+        }
         seeds.forEach(function (seed) {
-            var tags = seed.card.tags.filter(function (tag) { return (db.frequency[tag] || 0) > 2; });
+            var tags = seed.card.tags.filter(function (tag) { return (db.frequency[tag] || 0) > 1; });
             tags.forEach(function (tag) {
                 var specificity = Math.log(db.cards.length / db.frequency[tag]);
-                var weight = GENRE.test(tag) ? 0.35 : Math.max(0.5, Math.min(3.8, specificity));
+                var weight = GENRE.test(tag) ? 1.15 : WORLD.test(tag) || TONES.test(tag) || MOOD.test(tag) ?
+                    Math.max(1.1, Math.min(4.5, specificity * 1.13)) : Math.max(0.5, Math.min(3.1, specificity));
                 db.tags[tag].forEach(function (card) {
                     if (eligible(card)) scores[card.id] = (scores[card.id] || 0) + seed.weight * weight;
                 });
@@ -457,12 +557,25 @@
             });
             seed.card.related.forEach(function (id) { if (eligible(db.ids[id])) neighbors[id] = true; });
         });
-        var shortlist = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; }).slice(0, 180);
-        var candidates = uniqueCards(shortlist.concat(Object.keys(neighbors)).map(function (id) {
-            var card = db.ids[id], first = db.entries[card.family];
-            return eligible(first) ? first : card;
-        }));
-        return rankTaste(db, seeds, candidates, {}, focus || 'all', negative);
+        var shortlist = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; }).slice(0, 260);
+        var candidates = uniqueCards(shortlist.concat(Object.keys(neighbors)).map(function (id) { return canonical(db.ids[id]); }));
+        var seedIds = maps(), autonomous = null, supplemental = [];
+        seeds.forEach(function (seed) { seedIds[seed.card.id] = true; });
+        (suggestions || []).forEach(function (entry) {
+            var card = db.ids[entry.id];
+            if (!seedIds[entry.seed] || !eligible(card)) return;
+            card = canonical(card);
+            if (!eligible(card)) return;
+            supplemental.push(card);
+            var weight = 1 / (1 + (Number(entry.rank) || 0) / 7);
+            assistance[card.id] = Math.min(1.28, (assistance[card.id] || 0) + weight);
+        });
+        if (supplemental.length) {
+            autonomous = maps();
+            candidates.forEach(function (card) { autonomous[card.id] = true; });
+            candidates = uniqueCards(candidates.concat(supplemental));
+        }
+        return rankTaste(db, seeds, candidates, {}, focus || 'all', negative, assistance, autonomous);
     }
 
     function interestGroups(seeds) {
@@ -562,6 +675,7 @@
     if (!Lampa || !$ || window.animeTasteInstalled) return;
     window.animeTasteInstalled = true;
     var accountCache;
+    var yummyCache = maps();
     var catalogRequest;
     var storyRequest;
     var plotCache = maps();
@@ -577,12 +691,39 @@
         }
         saved = saved || {};
         return {likes: saved.likes || {}, hidden: saved.hidden || {}, ignored: saved.ignored || {},
-            disputed: saved.disputed === true};
+            disputed: saved.disputed === true, useYummy: saved.useYummy !== false};
     }
 
     function publicApi() {
         var api = window.LampaYaniApi;
         return api && api.profile && api.userLists && api.normalize ? api : null;
+    }
+
+    function connectedYummy() {
+        if (!data().useYummy) return null;
+        var auth = window.LampaYaniAuth;
+        var saved;
+        try { saved = auth && typeof auth.get === 'function' ? auth.get() : null; }
+        catch (error) { return null; }
+        var api = publicApi();
+        return api && saved && saved.token ? {
+            api: api, userId: saved.user_id, identity: String(saved.user_id || saved.login || ''),
+            token: saved.token
+        } : null;
+    }
+
+    function sameYummy(connection) {
+        var live = connectedYummy();
+        return Boolean(live && connection && live.api === connection.api && live.identity === connection.identity &&
+            live.token === connection.token);
+    }
+
+    function deadline(promise, fallback, timeout) {
+        return new Promise(function (resolve) {
+            var timer = setTimeout(function () { resolve(fallback); }, timeout);
+            promise.then(function (value) { clearTimeout(timer); resolve(value); },
+                function () { clearTimeout(timer); resolve(fallback); });
+        });
     }
 
     function requestJson(url, timeout) {
@@ -1057,13 +1198,17 @@
     }
 
     function snapshot() {
-        var auth = window.LampaYaniAuth;
-        var saved = auth && auth.get ? auth.get() : {};
-        var api = publicApi();
-        if (!api || !saved || !saved.token) return Promise.resolve({favorites: []});
-        var identity = String(saved.user_id || saved.login || '');
-        if (identity && accountCache && accountCache.identity === identity && accountCache.until > Date.now()) return accountCache.promise;
-        var user = saved.user_id ? Promise.resolve(saved.user_id) : api.profile().then(function (payload) {
+        var connection = connectedYummy();
+        if (!connection) {
+            accountCache = null;
+            yummyCache = maps();
+            return Promise.resolve({favorites: []});
+        }
+        var api = connection.api;
+        if (accountCache && sameYummy(accountCache.connection) && accountCache.until > Date.now()) return accountCache.promise;
+        var user = connection.userId ? Promise.resolve(connection.userId) : Promise.resolve().then(function () {
+            return api.profile();
+        }).then(function (payload) {
             var item = payloadValue(payload) || {};
             return item.id || item.user_id || (item.user && item.user.id);
         });
@@ -1077,16 +1222,60 @@
             rows.forEach(function (item) {
                 var card = anime(item);
                 if (!card) return;
-                var list = item.user && item.user.list || item.user_list || item.list_state || {};
-                if (list.is_fav || list.is_favorite || list.favorite) favorites.push(card);
+                var subject = item.anime || item;
+                var list = item.user && item.user.list || item.user_list || item.list_state ||
+                    subject.user && subject.user.list || subject.user_list || {};
+                if (list.is_fav || list.is_favorite || list.favorite || item.is_fav || item.is_favorite ||
+                    subject.is_favorite || subject.yani_is_favorite) favorites.push(card);
             });
-            return {favorites: favorites};
+            return sameYummy(connection) ? {favorites: uniqueCards(favorites), verified: true} : {favorites: []};
         }).catch(function () {
-            accountCache = null;
+            if (accountCache && accountCache.promise === promise) accountCache = null;
             return {favorites: []};
         });
-        accountCache = {identity: identity, until: Date.now() + 120000, promise: promise};
+        accountCache = {connection: connection, until: Date.now() + 120000, promise: promise};
         return promise;
+    }
+
+    function nearbyYummy(db, seed, id, connection) {
+        var api = connection.api;
+        if (typeof api.recommendations !== 'function') return Promise.resolve([]);
+        var cached = yummyCache[seed.id];
+        if (cached && cached.expires > Date.now() && sameYummy(cached.connection)) return cached.pending;
+        var target = id > 0 ? Promise.resolve(id) : Promise.resolve().then(function () {
+            return typeof api.search === 'function' ? api.search(seed.title, {limit: 12}) : [];
+        }).then(function (payload) {
+            var matches = api.normalize(payload).map(anime).filter(function (source) {
+                return source && matchCatalog(db, source) === seed;
+            });
+            return matches[0] && matches[0].id;
+        });
+        var pending = target.then(function (yani) {
+            return yani && sameYummy(connection) ? api.recommendations(yani) : [];
+        }).then(function (payload) {
+            if (!sameYummy(connection)) return [];
+            return api.normalize(payload).slice(0, 20).map(function (item, index) {
+                var match = matchCatalog(db, anime(item));
+                return match ? {seed: seed.id, id: match.id, rank: index} : null;
+            }).filter(Boolean);
+        }).catch(function () {
+            if (yummyCache[seed.id] && yummyCache[seed.id].pending === pending) delete yummyCache[seed.id];
+            return [];
+        });
+        if (Object.keys(yummyCache).length >= 30) yummyCache = maps();
+        yummyCache[seed.id] = {connection: connection, expires: Date.now() + 300000, pending: pending};
+        return pending;
+    }
+
+    function yummySuggestions(db, seeds, prefs, watch, account) {
+        var connection = connectedYummy();
+        if (!connection || !account.verified) return Promise.resolve([]);
+        return Promise.all(seeds.slice(0, 3).map(function (seed) {
+            var history = watch[seed.card.id];
+            return nearbyYummy(db, seed.card, prefs.supplemental[seed.card.id] || history && history.yani, connection);
+        })).then(function (groups) {
+            return sameYummy(connection) ? [].concat.apply([], groups) : [];
+        });
     }
 
     function openDetail(card) {
@@ -1246,7 +1435,6 @@
         var interest = -1;
         var account = {favorites: []};
         var db, prefs, watch;
-        var accountRequested = false;
         var focusId;
         var workspace = $('<div class="anime-taste"></div>');
         var toolbar = $('<div class="anime-taste__toolbar"></div>').appendTo(workspace);
@@ -1374,21 +1562,25 @@
             results.empty();
             message.text('Загрузка…');
             focus();
-            if (!accountRequested && publicApi() && (mode === 'recommendations' || mode === 'favorites')) {
-                accountRequested = true;
-                snapshot().then(function (profile) {
-                    account = profile;
-                    if (profile.favorites.length && !destroyed && (mode === 'recommendations' || mode === 'favorites')) refresh();
-                }).catch(function () {});
-            }
-            catalog().then(function (library) {
+            var connection = connectedYummy();
+            var usesAccount = mode === 'recommendations' || mode === 'similar' || mode === 'favorites' || mode === 'options';
+            var profileRequest = usesAccount ? deadline(snapshot(), {favorites: []}, 1700) :
+                Promise.resolve(connection ? account : {favorites: []});
+            Promise.all([catalog(), profileRequest]).then(function (ready) {
                 if (current !== ticket || destroyed) return;
-                db = library;
+                db = ready[0];
+                account = ready[1];
                 prefs = preferences(db, saved, account);
                 watch = consolidateHistory(db);
                 lastStorageState = localState(saved, watch);
                 if (mode === 'options') {
                     message.text('Видимость каталога и сохранённые оценки.');
+                    button(saved.useYummy ? 'Дополнение YummyAnime — включено' : 'Дополнение YummyAnime — выключено', function () {
+                        var fresh = data();
+                        fresh.useYummy = !fresh.useYummy;
+                        Lampa.Storage.set(STORAGE, fresh);
+                        refresh();
+                    }).appendTo(results);
                     button(saved.disputed ? 'Спорные карточки — показывать' : 'Спорные карточки — скрывать', function () {
                         var fresh = data();
                         fresh.disputed = !fresh.disputed;
@@ -1505,13 +1697,14 @@
                     });
                     focus();
                 }
-                function renderList() {
+                function renderList(loaded) {
                     if (current !== ticket || destroyed) return;
-                    showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative));
+                    showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative, loaded[1]));
                 }
-                if (Object.keys(db.story).length) return renderList();
-                var wait = new Promise(function (resolve) { setTimeout(resolve, 3500); });
-                return Promise.race([loadStories(db), wait]).then(renderList);
+                var story = Object.keys(db.story).length ? Promise.resolve() : deadline(loadStories(db), null, 3500);
+                var suggestions = connection && account.verified ?
+                    deadline(yummySuggestions(db, seeds, prefs, watch, account), [], 2800) : Promise.resolve([]);
+                return Promise.all([story, suggestions]).then(renderList);
             }).catch(function (error) {
                 if (current !== ticket || destroyed) return;
                 message.text(error && error.message || 'Не удалось загрузить данные.');
@@ -1540,8 +1733,8 @@
         page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.0.0', name: NAME, author: 'Nano',
-        description: 'История серий, избранное, оценки и рекомендации аниме по сюжету, миру и атмосфере.'};
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.1.0', name: NAME, author: 'Nano',
+        description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
 }(typeof window === 'undefined' ? {} : window));
