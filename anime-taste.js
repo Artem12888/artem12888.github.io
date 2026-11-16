@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.4.1 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.5.0 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -26,6 +26,16 @@
         ['historical', 'Историческое'], ['sports', 'Спорт'], ['music', 'Музыка'],
         ['crime', 'Криминал'], ['suspense', 'Саспенс'], ['mecha', 'Меха']
     ];
+    var REVIEW_GENRES = {
+        isekai: /ис[эе]ка[йяие]|исика[йяие]|попаданц|isekai/, mystery: /детектив|расследован|загадк|mystery/,
+        action: /экш[еэ]н|боевик|\baction\b/, fantasy: /ф[эе]нт[эе]зи|fantasy/,
+        adventure: /приключен|adventure/, comedy: /комеди|comedy/, romance: /романтик|романтическ|романс|romance/,
+        drama: /драм|drama/, 'sci fi': /фантастик|sci[ -]?fi/, 'slice of life': /повседневност|slice of life/,
+        supernatural: /сверхъестествен|supernatural/, ecchi: /этти|эччи|ecchi/,
+        horror: /ужас|хоррор|horror/, thriller: /триллер|thriller/, psychological: /психологи|psychological/,
+        historical: /историческ|historical/, sports: /спортивн|спорта|спорт(?:$|[^а-яё])|sports/,
+        music: /музык|music/, crime: /криминал|crime/, suspense: /саспенс|suspense/, mecha: /меха(?:$|[^а-яё])|mecha/
+    };
     var REVIEW_TOPICS = [
         ['perverted', 'герой-извращенец', /извращен|извращён|похотлив|pervert/, /^(perverted|pervert|lecherous protagonist)$/],
         ['fanservice', 'фансервис', /фан[ -]?сервис|этти|эччи|ecchi|fanservice/, /^(ecchi|fanservice)$/],
@@ -48,10 +58,10 @@
     ];
 
     function analyzeReview(text) {
-        var votes = maps(), sentiment = 0;
-        var bad = /(?:^|[^а-яёa-z])не\s+(?:очень\s+)?(?:понрав|нрав|люб|заш|зацеп|интерес|впечатл)|раздраж|бесит|отталкива|скучн|ненавиж|плох|dislike|hate|boring/;
-        var good = /понрав|нрав|люблю|заш[её]л|зашло|зацеп|обожа|отличн|крут|интерес|like|love|enjoy/;
-        String(text || '').toLowerCase().split(/[.!?;\n]+|\s+(?:но|зато|однако)\s+|,\s*(?=(?:мне\s+)?(?:не\s+)?(?:понрав|нрав|люб|раздраж|бесит))/)
+        var votes = maps(), genres = maps(), sentiment = 0;
+        var bad = /(?:^|[^а-яёa-z])не\s+(?:очень\s+)?(?:понрав|нрав|люб|заш|зацеп|интерес|впечатл|мой жанр)|раздраж|бесит|отталкива|скучн|ненавиж|плох|dislike|hate|boring/;
+        var good = /понрав|нрав|люблю|любим|предпочита|по душе|заш[её]л|зашло|зацеп|обожа|отличн|крут|интерес|like|love|enjoy/;
+        String(text || '').toLowerCase().split(/[.!?;\n]+|\s+(?:но|а|зато|однако)\s+|,\s*(?=(?:мне\s+)?(?:не\s+)?(?:понрав|нрав|люб|раздраж|бесит))/)
             .forEach(function (clause) {
                 var sign = bad.test(clause) ? -1 : good.test(clause) ? 1 : 0;
                 sentiment += sign;
@@ -59,8 +69,12 @@
                 REVIEW_TOPICS.forEach(function (topic) {
                     if (topic[2].test(clause)) votes[topic[0]] = (votes[topic[0]] || 0) + sign;
                 });
+                GENRE_ROWS.forEach(function (genre) {
+                    var tag = genre[0];
+                    if (REVIEW_GENRES[tag].test(clause)) genres[tag] = (genres[tag] || 0) + sign;
+                });
             });
-        return {sentiment: sentiment, topics: votes};
+        return {sentiment: sentiment, topics: votes, genres: genres};
     }
 
     function reviewAdjustment(card, topics) {
@@ -77,15 +91,18 @@
         var liked = profile.signals, dislikes = maps();
         function weight(total, seed) { return total + seed.weight; }
         var total = liked.reduce(weight, 0);
-        // Establish a taste across several franchises before changing the starting order.
-        if (liked.length < 3 || total < 2.1) return GENRE_ROWS.slice();
+        var established = liked.length >= 3 && total >= 2.1;
+        var minimumSupport = established ? 2 : profile.yummyTaste && total >= 0.45 ? 1 : Infinity;
         (profile.negative || []).forEach(function (seed) { dislikes[seed.card.family] = seed.card; });
         var avoided = Object.keys(dislikes).map(function (key) { return dislikes[key]; });
         return GENRE_ROWS.map(function (genre, index) {
             var tag = genre[0];
+            var marked = Boolean(profile.genreLikes && profile.genreLikes[tag] === true);
+            var explicit = profile.genreReviews && profile.genreReviews[tag] || 0;
+            var priority = Math.max(-2, Math.min(2, explicit)) * 0.58;
             function tagged(card) { return card.tags.indexOf(tag) >= 0; }
             var supporters = liked.filter(function (seed) { return tagged(seed.card); });
-            if (supporters.length < 2) return {genre: genre, index: index, priority: 0};
+            if (supporters.length < minimumSupport) return {genre: genre, index: index, marked: marked, priority: priority};
             var evidence = supporters.reduce(weight, 0);
             var popularity = (db.frequency[tag] || 0) / db.cards.length;
             var preference = Math.max(0, evidence / total - popularity) * evidence / (evidence + 1.5);
@@ -101,8 +118,8 @@
                 count++;
             }
             var score = preference - 0.3 * aversion + 1.5 * review + 0.18 * affinity / (count || 1);
-            return {genre: genre, index: index, priority: score >= 0.10 ? score : 0};
-        }).sort(function (a, b) { return b.priority - a.priority || a.index - b.index; })
+            return {genre: genre, index: index, marked: marked, priority: priority + (score >= 0.10 ? score : 0)};
+        }).sort(function (a, b) { return Number(b.marked) - Number(a.marked) || b.priority - a.priority || a.index - b.index; })
             .map(function (entry) { return entry.genre; });
     }
     var WORLD = /world|fantasy|apocalyp|dystopi|cyberpunk|steampunk|space|magic|alchemy|alchemist|school|medieval|historical|isekai|future|virtual reality|parallel dimension|urban|rural|mytholog|military|empire|kingdom|demons?|vampire|outer space|robots?|superpowers?|alien|^folklore$|^supernatural$/;
@@ -891,12 +908,92 @@
         return 0;
     }
 
+    function accountRows(payload, fields) {
+        var value = payloadValue(payload);
+        for (var depth = 0; value && !Array.isArray(value) && depth < 3; depth++) {
+            var keys = fields.filter(function (key) { return value[key] && typeof value[key] === 'object'; });
+            value = keys.length ? value[keys[0]] : null;
+        }
+        return Array.isArray(value) ? value : [];
+    }
+
+    function yummyWatchEvents(rows) {
+        return rows.map(function (item) {
+            if (!item || typeof item !== 'object') return null;
+            var title = item.anime && typeof item.anime === 'object' ? item.anime : {};
+            var watched = item.watched && typeof item.watched === 'object' ? item.watched : {};
+            var video = item.video || {}, screenshot = item.screenshot || {};
+            var id = Number(item.anime_id || item.animeId || title.anime_id || title.id);
+            if (!id) return null;
+            var episodeName = item.episode || screenshot.episode || item.number || watched.episode || video.episode || item.ep_title;
+            var numbered = /^(?:episode|серия|эпизод)\s*(\d+(?:\.\d+)?)$/i.exec(String(episodeName || ''));
+            var episode = Number(episodeName) || (numbered ? Number(numbered[1]) : 0);
+            var season = Number(item.season || title.season || watched.season || video.season) || 0;
+            var duration = Number(item.duration || watched.duration || video.duration) || 0;
+            var time = Number(item.end_time || item.time || watched.end_time || watched.time || item.current_time) || 0;
+            var complete = item.finished === true || item.completed === true || watched.finished === true || watched.completed === true;
+            var percent = complete ? 100 : Number(item.percent || watched.percent || item.progress_percent) || 0;
+            var rawDate = item.updated_at || item.date || item.created_at || watched.updated_at || watched.date;
+            var stamp = Number(rawDate) || Date.parse(rawDate || '') || 0;
+            if (stamp > 0 && stamp < 100000000000) stamp *= 1000;
+            var source = {anime_id: id, title: title.title || item.anime_title || item.title || title.name,
+                titles: Array.isArray(title.titles) ? title.titles : [],
+                mal_id: remoteMal(title) || remoteMal(item) || Number(item.malId || title.malId) || 0,
+                year: Number(title.year || item.year || String(title.release_date || '').slice(0, 4)) || 0};
+            var videoId = item.video_id || item.videoId || video.id;
+            return {source: source, road: {duration: duration, time: time, percent: percent},
+                stamp: stamp, episode: episode, season: season, hash: !episode && videoId ? 'yani-' + videoId : '', yani: id};
+        }).filter(Boolean);
+    }
+
+    function mergeYummyHistory(db, local, account) {
+        if (!account.watches || !account.watches.length) return local;
+        var watch = Object.assign({}, local), ids = maps();
+        Object.keys(local).forEach(function (key) { if (local[key].yani) ids[local[key].yani] = db.ids[key]; });
+        (account.favorites || []).forEach(function (favorite) {
+            var card = matchCatalog(db, favorite);
+            if (card) ids[favorite.id] = card;
+        });
+        var matches = account.watches.map(function (event) {
+            var card = matchCatalog(db, event.source, event.season);
+            if (card && !ids[event.yani]) ids[event.yani] = card;
+            return card;
+        });
+        account.watches.forEach(function (event, index) {
+            var card = matches[index] || ids[event.yani];
+            if (!card || !(progressOf(event.road) >= 30 || sufficient(event.road))) return;
+            var prior = watch[card.id] || {last: 0, percent: 0};
+            var matchingKeys = Object.keys(prior.episodes || {}).filter(function (key) {
+                var saved = prior.episodes[key];
+                return Number(saved.episode) === event.episode && event.episode > 0 &&
+                    (!event.season || !saved.season || Number(saved.season) === event.season);
+            });
+            var known = matchingKeys.filter(function (key) { return Number(prior.episodes[key].season) > 0; });
+            var key = known.length === 1 ? known[0] : matchingKeys[0];
+            var existing = prior.episodes && prior.episodes[key];
+            // Older imports sometimes recorded the same numbered episode with season 0 and its known season.
+            if (known.length === 1 && matchingKeys.length === 2) {
+                var unknown = matchingKeys[0] === key ? matchingKeys[1] : matchingKeys[0];
+                var duplicate = prior.episodes[unknown], episodes = Object.assign({}, prior.episodes);
+                episodes[key] = Object.assign({}, existing, {percent: Math.max(existing.percent || 0, duplicate.percent || 0),
+                    replays: Math.max(existing.replays || 0, duplicate.replays || 0), last: Math.max(existing.last || 0, duplicate.last || 0)});
+                delete episodes[unknown];
+                prior = Object.assign({}, prior, {episodes: episodes});
+            }
+            var season = existing ? existing.season : event.season || card.tmdb && card.tmdb[1] || 0;
+            var merged = viewedEpisode(prior, Object.assign({}, event, {season: season}));
+            watch[card.id] = Object.assign({}, prior, merged, {yani: event.yani, yummyAccount: true, title: card.title});
+        });
+        return watch;
+    }
+
     if (typeof module === 'object' && module.exports) {
         module.exports = {parseQuery: parseQuery, indexCatalog: indexCatalog, catalogueSearch: catalogueSearch,
             matchCatalog: matchCatalog, features: features, rankTaste: rankTaste, sufficient: sufficient,
             recommend: recommend, recommendationQueue: recommendationQueue, tasteNetwork: tasteNetwork,
             interestGroups: interestGroups, viewingWeight: viewingWeight, viewedEpisode: viewedEpisode,
-            analyzeReview: analyzeReview, reviewAdjustment: reviewAdjustment, rankGenreRows: rankGenreRows};
+            analyzeReview: analyzeReview, reviewAdjustment: reviewAdjustment, rankGenreRows: rankGenreRows,
+            yummyWatchEvents: yummyWatchEvents, mergeYummyHistory: mergeYummyHistory};
         return;
     }
 
@@ -1258,7 +1355,16 @@
 
     function guidance() {
         var saved = reading(guidanceFile());
-        return {feedback: saved.feedback || {}, bindings: saved.bindings || {}, unresolved: saved.unresolved || {}};
+        return {feedback: saved.feedback || {}, bindings: saved.bindings || {}, unresolved: saved.unresolved || {},
+            genreLikes: saved.genreLikes || {}};
+    }
+
+    function setGenreLike(tag, enabled) {
+        var rules = guidance();
+        if (enabled) rules.genreLikes[tag] = true;
+        else delete rules.genreLikes[tag];
+        Lampa.Storage.set(guidanceFile(), rules);
+        return rules.genreLikes;
     }
 
     function bindKey(source, season) {
@@ -1424,7 +1530,7 @@
     }
 
     function preferences(db, saved, account) {
-        var likes = maps(), hidden = maps(), ignored = maps(), supplemental = maps();
+        var likes = maps(), hidden = maps(), ignored = maps(), supplemental = maps(), yummyFavorites = maps();
         function convert(card) {
             return db.ids[card.id] || matchCatalog(db, card);
         }
@@ -1447,6 +1553,7 @@
             var card = convert(original);
             if (card && !ignored[card.id] && !saved.ignored[original.id]) {
                 if (!likes[card.id]) likes[card.id] = 1;
+                yummyFavorites[card.id] = true;
                 supplemental[card.id] = original.id;
             }
         });
@@ -1459,7 +1566,7 @@
             if (db.ids[id]) feedback[db.ids[id].id] = rules.feedback[id];
         });
         return {likes: likes, hidden: hidden, supplemental: supplemental, feedback: feedback,
-            reviews: reviews(), disputed: saved.disputed};
+            reviews: reviews(), genreLikes: rules.genreLikes, yummyFavorites: yummyFavorites, disputed: saved.disputed};
     }
 
     function compactPreference(card, stamp) {
@@ -1535,10 +1642,12 @@
 
     function tasteProfile(db, prefs, watch, source) {
         var feedback = prefs.feedback, excluded = maps(), families = maps(), analyses = maps(), topics = maps();
+        var genreReviews = maps();
         Object.keys(prefs.reviews).forEach(function (id) {
             if (!db.ids[id] || !prefs.reviews[id] || !prefs.reviews[id].text) return;
             var review = analyses[id] = analyzeReview(prefs.reviews[id].text);
             Object.keys(review.topics).forEach(function (key) { topics[key] = (topics[key] || 0) + review.topics[key]; });
+            Object.keys(review.genres).forEach(function (key) { genreReviews[key] = (genreReviews[key] || 0) + review.genres[key]; });
         });
         var keys = unique(Object.keys(prefs.likes).concat(Object.keys(watch), Object.keys(feedback), Object.keys(analyses)));
         var signals = keys.reduce(function (collected, id) {
@@ -1577,7 +1686,12 @@
         Object.keys(feedback).forEach(function (id) { excluded[id] = true; });
         Object.keys(analyses).forEach(function (id) { excluded[id] = true; });
         db.cards.forEach(function (card) { if (trackedFamilies[card.family]) excluded[card.id] = true; });
-        return {seeds: seeds, signals: signals.slice(0, 72), negative: negative, excluded: excluded, topics: topics};
+        var yummyTaste = signals.some(function (seed) {
+            var id = seed.card.id;
+            return prefs.yummyFavorites[id] || watch[id] && watch[id].yummyAccount;
+        });
+        return {seeds: seeds, signals: signals.slice(0, 72), negative: negative, excluded: excluded, topics: topics,
+            genreLikes: prefs.genreLikes, genreReviews: genreReviews, yummyTaste: yummyTaste};
     }
 
     function sourceFromLampa(card, entry) {
@@ -1671,6 +1785,25 @@
         scheduleHistory();
     }
 
+    function yummyAccountHistory(api) {
+        if (typeof api.watchHistory !== 'function') return Promise.resolve(null);
+        var fields = ['items', 'data', 'history', 'watches', 'results'];
+        var first = null;
+        function page(offset) {
+            return Promise.resolve().then(function () { return api.watchHistory(30, offset); }).then(function (payload) {
+                return accountRows(payload, fields);
+            });
+        }
+        var full = page(0).then(function (rows) {
+            first = yummyWatchEvents(rows);
+            if (rows.length < 30) return first;
+            return Promise.all([30, 60, 90].map(function (offset) {
+                return page(offset).then(yummyWatchEvents).catch(function () { return []; });
+            })).then(function (pages) { return first.concat.apply(first, pages); });
+        });
+        return deadline(full, null, 4200).then(function (history) { return history || first; });
+    }
+
     function snapshot() {
         var connection = connectedYummy();
         if (!connection) {
@@ -1686,12 +1819,13 @@
             var item = payloadValue(payload) || {};
             return item.id || item.user_id || (item.user && item.user.id);
         });
-        var promise = user.then(function (id) {
+        var readingFavorites = user.then(function (id) {
             if (!id) throw new Error('Профиль YummyAnime недоступен.');
             return api.userLists(id);
         }).then(function (payload) {
             var lists = window.LampaYaniAccountLists;
-            var rows = lists && lists.normalize ? lists.normalize(payload) : api.normalize(payload);
+            var rows = accountRows(payload, ['animes', 'anime', 'items', 'data', 'results', 'list', 'values']);
+            if (!rows.length) rows = lists && lists.normalize ? lists.normalize(payload) : api.normalize(payload);
             var favorites = [];
             rows.forEach(function (item) {
                 var card = anime(item);
@@ -1702,10 +1836,13 @@
                 if (list.is_fav || list.is_favorite || list.favorite || item.is_fav || item.is_favorite ||
                     subject.is_favorite || subject.yani_is_favorite) favorites.push(card);
             });
-            return sameYummy(connection) ? {favorites: uniqueCards(favorites), verified: true} : {favorites: []};
-        }).catch(function () {
-            if (accountCache && accountCache.promise === promise) accountCache = null;
-            return {favorites: []};
+            return uniqueCards(favorites);
+        });
+        var promise = Promise.all([deadline(readingFavorites, null, 4200), yummyAccountHistory(api)]).then(function (feeds) {
+            if (!sameYummy(connection)) return {favorites: []};
+            var verified = Boolean(feeds[0] || feeds[1]);
+            if (!verified && accountCache && accountCache.promise === promise) accountCache = null;
+            return {favorites: feeds[0] || [], watches: feeds[1] || [], verified: verified};
         });
         accountCache = {connection: connection, until: Date.now() + 120000, promise: promise};
         return promise;
@@ -1921,6 +2058,7 @@
             '.anime-taste__grid .anime-taste__row{width:20%;padding:0 .6em 1.3em;box-sizing:border-box}',
             '.anime-taste__shelf{margin:.4em 0 1em}',
             '.anime-taste__shelf-head{display:flex;align-items:center;justify-content:space-between;min-height:2.4em;margin:0 .5em .4em;font-weight:600}',
+            '.anime-taste__genre-preferences{display:flex;flex-wrap:wrap;align-items:center}',
             '.anime-taste__shelf-status{font-size:.78em;color:#f0f3f9;font-weight:400}',
             '.anime-taste__sentinel{height:1px}',
             '.anime-taste__shelf .anime-taste__grid{position:relative;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}',
@@ -1992,7 +2130,7 @@
             button('Моё любимое', function () { show('favorites'); }).toggleClass('is-current', mode === 'favorites').appendTo(toolbar);
             button('История аниме', function () { show('history'); }).toggleClass('is-current', mode === 'history').appendTo(toolbar);
             if (Object.keys(data().hidden).length) button('Скрытые', function () { show('hidden'); }).toggleClass('is-current', mode === 'hidden').appendTo(toolbar);
-            button('Настройки подбора', function () { show('options'); }).toggleClass('is-current', mode === 'options').appendTo(toolbar);
+            button('Настройки подбора', function () { show('options'); }).toggleClass('is-current', mode === 'options' || mode === 'genres').appendTo(toolbar);
         }
 
         function input() {
@@ -2013,8 +2151,9 @@
                 Lampa.Controller.toggle('content');
                 if (!text || !writeReview(card, text)) return;
                 var signals = analyzeReview(text);
-                var found = REVIEW_TOPICS.filter(function (topic) { return signals.topics[topic[0]]; });
-                Lampa.Noty.show(found.length ? 'Отзыв сохранён. Учту: ' + found.map(function (topic) { return topic[1]; }).join(', ') :
+                var found = REVIEW_TOPICS.filter(function (topic) { return signals.topics[topic[0]]; }).concat(
+                    GENRE_ROWS.filter(function (genre) { return signals.genres[genre[0]]; }));
+                Lampa.Noty.show(found.length ? 'Отзыв сохранён. Учту: ' + unique(found.map(function (entry) { return entry[1]; })).join(', ') :
                     'Отзыв сохранён');
                 refresh();
             });
@@ -2030,7 +2169,7 @@
             $('<div class="anime-taste__review"></div>').text(saved.text).appendTo(parent);
         }
 
-        function selectCard(card) {
+        function selectCard(card, tag) {
             if (mode === 'review') { editReview(card); return; }
             if (mode === 'bind') {
                 rememberBinding(source, card);
@@ -2058,6 +2197,16 @@
                     refresh();
                 }}
             ];
+            var genre = tag && GENRE_ROWS.filter(function (pair) { return pair[0] === tag; })[0];
+            if (genre) {
+                var marked = prefs.genreLikes[tag] === true;
+                items.splice(3, 0, {title: marked ? 'Убрать жанр «' + genre[1] + '» из любимых' : 'Нравится жанр «' + genre[1] + '»',
+                    action: function () {
+                        setGenreLike(tag, !marked);
+                        Lampa.Noty.show(marked ? 'Отметка жанра снята' : 'Жанр добавлен в любимые');
+                        show('recommendations');
+                    }});
+            }
             Object.keys(FOCUS).forEach(function (kind) {
                 items.push({title: FOCUS[kind], action: function () { openTaste('similar', card, kind); }});
             });
@@ -2089,8 +2238,9 @@
             var grid = target || results.children().last();
             if (!grid.hasClass('anime-taste__grid')) grid = $('<div class="anime-taste__grid"></div>').appendTo(results);
             var item = $(Lampa.Template.get('card', {title: '', release_year: String(card.year || '')}));
-            var key = target ? grid.data('tasteLane') + ':' + card.id : card.id;
-            item.addClass('anime-taste__row').on('hover:enter', function () { focusId = key; selectCard(card); });
+            var lane = target && grid.data('tasteLane');
+            var key = lane ? lane + ':' + card.id : card.id;
+            item.addClass('anime-taste__row').on('hover:enter', function () { focusId = key; selectCard(card, lane); });
             item.data('tasteId', card.id);
             item.data('tasteFocusKey', key);
             var title = item.find('.card__title').addClass('anime-taste__title').text(displayTitle(card));
@@ -2151,7 +2301,7 @@
         function pagedShelf(title, queue, current, tag, visit) {
             var section = $('<section class="anime-taste__shelf"></section>').attr('data-genre', tag || '').appendTo(results);
             var header = $('<div class="anime-taste__shelf-head"></div>').appendTo(section);
-            $('<div></div>').text(title).appendTo(header);
+            $('<div></div>').text(tag && prefs.genreLikes[tag] === true ? '★ ' + title : title).appendTo(header);
             var status = $('<span class="anime-taste__shelf-status"></span>').appendTo(header);
             var grid = $('<div class="anime-taste__grid"></div>').appendTo(section);
             var pending = [], busy = false, advance = false, pageSize = tag ? 14 : 21;
@@ -2295,9 +2445,8 @@
             message.text('Загрузка…');
             focus();
             var connection = connectedYummy();
-            var usesAccount = mode === 'recommendations' || mode === 'similar' || mode === 'favorites' || mode === 'options';
-            var profileRequest = usesAccount ? deadline(snapshot(), {favorites: []}, 1700) :
-                Promise.resolve(connection ? account : {favorites: []});
+            var usesAccount = mode === 'recommendations' || mode === 'similar' || mode === 'favorites' || mode === 'history';
+            var profileRequest = usesAccount ? snapshot() : Promise.resolve(connection ? account : {favorites: []});
             if (mode === 'recommendations' || mode === 'similar') {
                 catalog().then(function (indexed) { if (!Object.keys(indexed.story).length) return loadStories(indexed); }).catch(function () {});
             }
@@ -2305,10 +2454,11 @@
             Promise.all([translated, profileRequest]).then(function (ready) {
                 if (current !== ticket || destroyed) return;
                 db = ready[0];
-                account = ready[1];
+                account = connection && !sameYummy(connection) ? {favorites: []} : ready[1];
                 prefs = preferences(db, saved, account);
-                watch = consolidateHistory(db);
-                lastStorageState = localState(saved, watch);
+                var localWatch = consolidateHistory(db);
+                lastStorageState = localState(saved, localWatch);
+                watch = mergeYummyHistory(db, localWatch, account);
                 if (mode === 'options') {
                     message.text('Видимость каталога и сохранённые оценки.');
                     button(saved.useYummy ? 'Дополнение YummyAnime — включено' : 'Дополнение YummyAnime — выключено', function () {
@@ -2325,6 +2475,26 @@
                     }).appendTo(results);
                     button('Мои оценки', function () { show('feedback'); }).appendTo(results);
                     button('Мои отзывы', function () { show('reviews'); }).appendTo(results);
+                    button('Любимые жанры', function () { show('genres'); }).appendTo(results);
+                    focus();
+                    return;
+                }
+                if (mode === 'genres') {
+                    message.text('Отметьте жанры, которые хотите видеть выше.');
+                    var choices = $('<div class="anime-taste__genre-preferences"></div>').appendTo(results);
+                    GENRE_ROWS.forEach(function (genre) {
+                        var tag = genre[0], name = genre[1];
+                        function label() {
+                            var selected = prefs.genreLikes[tag] === true;
+                            choice.text(selected ? '★ ' + name : name).toggleClass('is-current', selected)
+                                .attr('aria-pressed', selected ? 'true' : 'false');
+                        }
+                        var choice = button(name, function () {
+                            prefs.genreLikes = setGenreLike(tag, prefs.genreLikes[tag] !== true);
+                            label();
+                        }).attr('role', 'button').attr('data-genre-preference', tag).appendTo(choices);
+                        label();
+                    });
                     focus();
                     return;
                 }
@@ -2505,7 +2675,7 @@
         };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.4.1', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.5.0', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });

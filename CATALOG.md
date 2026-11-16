@@ -64,6 +64,20 @@ Once the profile has sufficient viewing or feedback across three distinct
 franchises, recurring genre preferences can move rows up. The ranking uses
 the same weighted signals and local model as the main recommendations,
 with a correction for genres that are common throughout the catalogue.
+With an authenticated YummyAnime account and the optional integration
+enabled, the first recommendation view can use its favourites and up to
+120 recent viewing entries with the local Lampa history. A numbered
+episode shared by both sources contributes once when the match is clear.
+Browsing works from local signals if the account feeds are unavailable.
+The account histories are read through the installed YummyAnime plugin
+using the [lists and viewing endpoints](https://api.yani.tv/).
+
+Mark genres under **Настройки подбора → Любимые жанры** or from the **OK**
+menu on a card inside the genre row. Marked genres come first and are saved
+locally. Directly named genres in positive or negative reviews also change
+the order. For example, **Мне нравится детектив** raises that genre and
+**Не люблю спорт** lowers it.
+
 The order is recomputed when recommendations refresh and stays fixed while
 the viewer browses. A row uses only entries tagged for that
 category. The remote's **←** and **→** move within a row and the next batch
