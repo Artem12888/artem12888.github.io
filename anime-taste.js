@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.1.0 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.2.0 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -10,8 +10,11 @@
     var STORAGE = 'anime_taste_v1';
     var HISTORY = 'anime_taste_history_v2';
     var SYNOPSES = 'anime_taste_synopses_v2';
-    var CATALOG = 'https://artem12888.github.io/anime-catalog-3.json';
-    var STORY_INDEX = 'https://artem12888.github.io/anime-story-3.json';
+    var ASSET_HOST = 'https://artem12888.github.io/';
+    var ASSET_MIRROR = 'https://cdn.jsdelivr.net/gh/Artem12888/artem12888.github.io@main/';
+    var ASSET_RAW = 'https://raw.githubusercontent.com/Artem12888/artem12888.github.io/main/';
+    var CATALOG = ASSET_HOST + 'anime-catalog-3.json';
+    var STORY_INDEX = ASSET_HOST + 'anime-story-3.json';
     var GENRE = /^(action|adventure|comedy|drama|fantasy|horror|mystery|romance|sci fi|slice of life|sports|supernatural|thriller|psychological|historical|music|crime|suspense|mecha|ecchi)$/;
     var WORLD = /world|fantasy|apocalyp|dystopi|cyberpunk|steampunk|space|magic|alchemy|alchemist|school|medieval|historical|isekai|future|virtual reality|parallel dimension|urban|rural|mytholog|military|empire|kingdom|demons?|vampire|outer space|robots?|superpowers?|alien|^folklore$|^supernatural$/;
     var TONES = /coming of age|found family|time loop|time travel|time skip|character driven|tragedy|ensemble cast|redemption|revenge|survival|battle of wits|mind games|conspiracy|rivalry|politics|detective|murder|rebellion|tournament|family life|unrequited love|sacrifice|secret identity|memory manipulation|espionage|slow burn|episodic/;
@@ -741,14 +744,67 @@
         });
     }
 
+    function catalogParts() {
+        var count = 10;
+        var loaded = [];
+        var stopped = false;
+        var receive = function (part, payload) {
+            if (part >= 0 && part < count && payload && Array.isArray(payload.data)) loaded[part] = payload;
+        };
+        window.animeTastePart32 = receive;
+        function transport(part, host) {
+            return new Promise(function (resolve, reject) {
+                var script = window.document.createElement('script');
+                function finish() {
+                    clearTimeout(timer);
+                    script.onload = script.onerror = null;
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    if (loaded[part]) resolve(loaded[part]);
+                    else reject(new Error('Часть каталога недоступна'));
+                }
+                var timer = setTimeout(finish, 6500);
+                script.onload = script.onerror = finish;
+                script.async = true;
+                script.src = host + 'anime-assets-v32/catalog-' + part + '.js';
+                window.document.head.appendChild(script);
+            });
+        }
+        var cursor = 0;
+        function next() {
+            var part = cursor++;
+            if (stopped || part >= count) return Promise.resolve();
+            return transport(part, ASSET_HOST).catch(function () { return transport(part, ASSET_MIRROR); }).then(next);
+        }
+        function clean() {
+            stopped = true;
+            if (window.animeTastePart32 === receive) delete window.animeTastePart32;
+        }
+        return Promise.all([next(), next(), next(), next()]).then(function () {
+            var first = loaded[0];
+            if (loaded.some(function (part) { return !part || part.updated !== first.updated; })) {
+                throw new Error('Части каталога разных версий');
+            }
+            return Object.assign({}, first, {data: [].concat.apply([], loaded.map(function (part) { return part.data; }))});
+        }).then(function (data) { clean(); return data; }, function (error) { clean(); throw error; });
+    }
+
+    function validateCatalog(raw) {
+        if (!raw || raw.version !== 3 || !Array.isArray(raw.data) || !raw.data.length ||
+            !Array.isArray(raw.tags) || !Array.isArray(raw.imageHosts)) throw new Error('Формат каталога изменился.');
+        return raw;
+    }
+
     function catalog() {
         if (!catalogRequest) {
-            catalogRequest = requestJson(CATALOG, 22000).then(function (raw) {
-                if (raw.version !== 3 || !Array.isArray(raw.data)) throw new Error('Формат каталога изменился.');
-                return indexCatalog(raw);
+            catalogRequest = requestJson(CATALOG, 7500).then(validateCatalog).catch(function () {
+                return catalogParts().then(validateCatalog);
             }).catch(function () {
+                return requestJson(ASSET_MIRROR + 'anime-catalog-3.json', 10000).then(validateCatalog);
+            }).catch(function () {
+                return requestJson(ASSET_RAW + 'anime-catalog-3.json', 10000).then(validateCatalog);
+            }).then(indexCatalog).catch(function () {
                 catalogRequest = null;
-                throw new Error('Не удалось загрузить каталог аниме. Повторите попытку.');
+                throw new Error('Не удалось получить каталог с основного сервера и зеркала. Повторите попытку.');
             });
         }
         return catalogRequest;
@@ -756,7 +812,9 @@
 
     function loadStories(db) {
         if (!storyRequest) {
-            storyRequest = requestJson(STORY_INDEX, 14000).then(function (raw) {
+            storyRequest = requestJson(STORY_INDEX, 6500).catch(function () {
+                return requestJson(ASSET_MIRROR + 'anime-story-3.json', 7000);
+            }).then(function (raw) {
                 if (raw.updated === db.updated && raw.entries) db.story = raw.entries;
                 else storyRequest = null;
             }).catch(function () { storyRequest = null; });
@@ -1285,7 +1343,7 @@
     }
 
     function button(text, action, className) {
-        return $('<div class="selector"></div>').addClass(className || 'anime-taste__button').text(text).on('hover:enter', action);
+        return $('<div class="selector"></div>').addClass(className || 'simple-button anime-taste__button').text(text).on('hover:enter', action);
     }
 
     function installCardButtons() {
@@ -1321,7 +1379,22 @@
     }
 
     function openTaste(mode, card, focus) {
-        Lampa.Activity.push({url: 'anime-taste', title: NAME, component: COMPONENT, tasteMode: mode, tasteCard: card, tasteFocus: focus});
+        Lampa.Activity.push({url: 'anime-taste', title: 'Аниме', component: COMPONENT, tasteMode: mode, tasteCard: card, tasteFocus: focus});
+    }
+
+    function mountAnimeTab() {
+        var current = Lampa.Activity && typeof Lampa.Activity.active === 'function' && Lampa.Activity.active();
+        if (!current || current.component !== 'category' || current.url !== 'anime' ||
+            !current.activity || typeof current.activity.render !== 'function') return;
+        var surface = $(current.activity.render());
+        var body = surface.find('.scroll__body').first();
+        if (!body.length) body = surface;
+        if (!body.length || body.children('.anime-taste-entry').length) return;
+        var bar = $('<div class="anime-taste-entry"></div>').prependTo(body);
+        var entry = button('Подбор по вкусу', function () { openTaste('recommendations'); }).appendTo(bar);
+        if (Lampa.Controller.enabled().name === 'content' && typeof Lampa.Controller.collectionAppend === 'function') {
+            Lampa.Controller.collectionAppend(entry);
+        }
     }
 
     function animationCard(movie) {
@@ -1381,16 +1454,23 @@
         registerSearch();
         monitorHistory();
         var menu = $('<li class="menu__item selector" data-action="anime_taste"></li>');
-        menu.append($('<div class="menu__ico anime-taste__icon" aria-hidden="true"></div>').text('♥'));
-        menu.append($('<div class="menu__text"></div>').text(NAME));
+        menu.append($('<div class="menu__ico" aria-hidden="true"></div>').text('♥'));
+        menu.append($('<div class="menu__text"></div>').text('Аниме'));
         menu.on('hover:enter', function () { openTaste('recommendations'); });
         function mountMenu() {
             var target = $('.menu .menu__list').first();
-            if (target.length && !target.find('[data-action="anime_taste"]').length) target.append(menu);
+            var nativeAnime = $('.menu [data-action="anime"]').first();
+            if (nativeAnime.length) menu.detach();
+            else if (target.length && !target.find('[data-action="anime_taste"]').length) target.append(menu);
             installCardButtons();
+            mountAnimeTab();
         }
         mountMenu();
-        Lampa.Listener.follow('activity', mountMenu);
+        Lampa.Listener.follow('activity', function (event) {
+            if (event.type !== 'start') return;
+            mountMenu();
+            setTimeout(mountAnimeTab, 120);
+        });
         // Stable YummyAnime can finish loading after this extension.
         var attempts = 0;
         var timer = setInterval(function () {
@@ -1408,16 +1488,16 @@
             actions.prepend(add);
         });
         $('<style></style>').text([
-            '.anime-taste{padding:1em 1.5em 2em}', '.anime-taste__icon{display:flex;align-items:center;justify-content:center;color:#ff91ad}',
+            '.anime-taste{padding:0 1.5em 2em}', '.anime-taste-entry{padding:0 1.5em .7em}',
             '.anime-taste__toolbar{display:flex;flex-wrap:wrap;margin-bottom:.8em}',
-            '.anime-taste__button{background:#303748;color:#fff;border-radius:.45em;padding:.55em .8em;margin:.18em .45em .18em 0}',
-            '.anime-taste__button.focus,.anime-taste__row.focus{background:#eef1f7;color:#162033;outline:0}',
-            '.anime-taste__button.is-current{box-shadow:inset 0 -.18em #ff91ad}',
-            '.anime-taste__message{opacity:.78;margin:.6em 0 1em;line-height:1.4}',
-            '.anime-taste__row{display:flex;align-items:center;min-height:4.2em;background:#292d38;border-radius:.55em;margin:.45em 0;padding:.35em .65em}',
-            '.anime-taste__image{width:2.5em;height:3.5em;object-fit:cover;border-radius:.18em;margin-right:.7em;background:#3a4052}',
-            '.anime-taste__caption{min-width:0}', '.anime-taste__title{font-size:1.05em;font-weight:600}',
-            '.anime-taste__meta,.anime-taste__reason{font-size:.79em;line-height:1.3;opacity:.8;margin-top:.18em}'
+            '.anime-taste__button{margin:.18em .45em .18em 0}',
+            '.anime-taste__button.is-current{text-decoration:underline;text-underline-offset:.21em}',
+            '.anime-taste__message{margin:.6em 0 .8em;line-height:1.4}',
+            '.anime-taste__grid{display:flex;flex-wrap:wrap;align-items:flex-start}',
+            '.anime-taste__grid .anime-taste__row{width:20%;padding:0 .6em 1.3em;box-sizing:border-box}',
+            '.anime-taste__reason{font-size:.72em;line-height:1.28;opacity:.76;margin-top:.28em;max-height:3.84em;overflow:hidden}',
+            '@media(max-width:800px){.anime-taste__grid .anime-taste__row{width:25%}}',
+            '@media(max-width:540px){.anime-taste__grid .anime-taste__row{width:33.333%}}'
         ].join('\n')).appendTo('head');
     }
 
@@ -1446,7 +1526,7 @@
         function focus() {
             if (!active || destroyed || Lampa.Controller.enabled().name !== 'content') return;
             Lampa.Controller.collectionSet(workspace);
-            var selected = results.children().filter(function () { return $(this).data('tasteId') === focusId; }).first();
+            var selected = results.find('.anime-taste__row').filter(function () { return $(this).data('tasteId') === focusId; }).first();
             Lampa.Controller.collectionFocus(selected.length ? selected[0] : false, workspace);
         }
 
@@ -1522,16 +1602,21 @@
         }
 
         function row(card, reason) {
-            var item = button('', function () { focusId = card.id; selectCard(card); }, 'anime-taste__row');
+            var grid = results.children().last();
+            if (!grid.hasClass('anime-taste__grid')) grid = $('<div class="anime-taste__grid"></div>').appendTo(results);
+            var item = $(Lampa.Template.get('card', {title: '', release_year: String(card.year || '')}));
+            item.addClass('anime-taste__row').on('hover:enter', function () { focusId = card.id; selectCard(card); });
             item.data('tasteId', card.id);
-            if (card.poster) item.append($('<img class="anime-taste__image" alt="">').attr('src', card.poster));
-            var text = $('<div class="anime-taste__caption"></div>').appendTo(item);
-            text.append($('<div class="anime-taste__title"></div>').text(card.title));
-            text.append($('<div class="anime-taste__meta"></div>').text([card.year || '', card.type, card.age || '',
-                card.rating > 0 ? '★ ' + card.rating.toFixed(1) : ''].filter(Boolean).join(' · ')));
-            if (reason) text.append($('<div class="anime-taste__reason"></div>').text(reason));
+            item.find('.card__title').addClass('anime-taste__title').text(card.title);
+            item.find('.card__age').text([card.year || '', card.type, card.age || ''].filter(Boolean).join(' · '));
+            var image = item.find('.card__img').first();
+            image.one('load', function () { item.addClass('card--loaded'); });
+            image.one('error', function () { $(this).attr('src', './img/img_broken.svg'); item.addClass('card--loaded'); });
+            image.attr('alt', '').attr('loading', 'lazy').attr('src', card.poster || './img/img_broken.svg');
+            if (reason) item.append($('<div class="anime-taste__reason"></div>').text(reason));
             item.on('hover:focus', function () { scroll.update(item, true); });
-            results.append(item);
+            grid.append(item);
+            return item;
         }
 
         function show(next) {
@@ -1692,8 +1777,7 @@
                     }
                     $('<div class="anime-taste__message"></div>').text(rows.length ? 'Новые находки' : 'Новых совпадений пока нет.').appendTo(results);
                     rows.slice(0, 25).forEach(function (entry) {
-                        row(entry.card, entry.reasons.join(' · '));
-                        results.children().last().addClass('anime-taste__suggestion');
+                        row(entry.card, entry.reasons.join(' · ')).addClass('anime-taste__suggestion');
                     });
                     focus();
                 }
@@ -1733,7 +1817,7 @@
         page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.1.0', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.2.0', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });

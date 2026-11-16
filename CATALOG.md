@@ -43,3 +43,13 @@ endpoint. Suggested titles are matched against the local catalogue. A weak
 match stays below the autonomous recommendations. The user can disable the
 integration under **Настройки подбора → Дополнение YummyAnime**.
 [YummyAnime API documentation](https://api.yani.tv/).
+
+Run `node build-catalog-parts.cjs` after refreshing the v3 catalogue.
+The generated `anime-assets-v32/catalog-*.js` files provide a script-loading
+fallback on TV builds where the catalogue JSON cannot be fetched with XHR.
+The plugin also uses a jsDelivr mirror of the same repository.
+
+On Lampa builds with the native Anime entry, open **Аниме → Подбор по вкусу**.
+Posters use the host's `card` template and navigation stays within the Lampa
+activity stack. Builds without a native Anime entry receive an **Аниме**
+entry for access to the same tools.
