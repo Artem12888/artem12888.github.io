@@ -60,6 +60,8 @@ Anime entry receive an **Аниме** entry for the same section.
 
 The main recommendation shelf can be scrolled with the remote. **Показать
 ещё** appends the next available results and focuses the first new card.
+Use **↑** and **↓** to move between rows. Focusing a card scrolls its
+poster and full title into view.
 The first results use the strongest candidates and the published story
 neighbours. Further requests rank more catalogue candidates in batches
 until the eligible matches are exhausted. Each shelf avoids repeating a

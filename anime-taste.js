@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.3.1 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.3.2 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -1698,6 +1698,7 @@
             '.anime-taste__shelf .anime-taste__grid::-webkit-scrollbar{display:none}',
             '.anime-taste__shelf .anime-taste__row{width:14.285%;flex:0 0 14.285%;padding:.25em .5em .65em}',
             '.anime-taste__shelf .card__title{font-size:.95em;line-height:1.2}',
+            '.anime-taste .anime-taste__row.focus .anime-taste__title{display:block;max-height:none;-webkit-line-clamp:unset!important;overflow-wrap:break-word}',
             '.anime-taste__shelf .card__vote{display:block;color:#fff;background:#46536a;border-radius:.32em}',
             '.anime-taste__reason{font-size:.72em;line-height:1.28;opacity:.76;margin-top:.28em;max-height:3.84em;overflow:hidden}',
             '@media(max-width:800px){.anime-taste__grid .anime-taste__row{width:25%}}',
@@ -1720,14 +1721,23 @@
         var interest = null;
         var account = {favorites: []};
         var db, prefs, watch;
-        var focusId;
+        var focusId, focusFrame;
         var workspace = $('<div class="anime-taste"></div>');
         var toolbar = $('<div class="anime-taste__toolbar"></div>').appendTo(workspace);
         var interests = $('<div class="anime-taste__interests"></div>').appendTo(workspace);
         var message = $('<div class="anime-taste__message"></div>').appendTo(workspace);
         var results = $('<div class="anime-taste__results"></div>').appendTo(workspace);
         var scroll = new Lampa.Scroll({mask: false, over: true, step: 220});
+        scroll.minus();
         scroll.append(workspace);
+        workspace[0].addEventListener('hover:focus', function (event) {
+            var target = event.target;
+            // Measure after Lampa applies the focus class and expands the title.
+            window.cancelAnimationFrame(focusFrame);
+            focusFrame = window.requestAnimationFrame(function () {
+                if (active && workspace[0].contains(target)) scroll.update(target, true);
+            });
+        }, true);
 
         function focus() {
             if (!active || destroyed || Lampa.Controller.enabled().name !== 'content') return;
@@ -1827,7 +1837,6 @@
                     if (left < track.scrollLeft) track.scrollLeft = left;
                     else if (right > track.scrollLeft + track.clientWidth) track.scrollLeft = right - track.clientWidth;
                 }
-                scroll.update(item, true);
             });
             grid.append(item);
             return item;
@@ -2107,7 +2116,7 @@
                 left: function () { moveAcross('left'); },
                 right: function () { moveAcross('right'); },
                 up: function () { if (window.Navigator.canmove('up')) window.Navigator.move('up'); else Lampa.Controller.toggle('head'); },
-                down: function () { window.Navigator.move('down'); },
+                down: function () { if (!window.Navigator.move('down')) scroll.wheel(160); },
                 back: function () { Lampa.Activity.backward(); }
             });
             Lampa.Controller.toggle('content');
@@ -2115,10 +2124,16 @@
         };
         page.pause = function () { active = false; $('body').removeClass('anime-taste-open'); };
         page.stop = page.pause;
-        page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
+        page.destroy = function () {
+            destroyed = true;
+            active = false;
+            ticket++;
+            window.cancelAnimationFrame(focusFrame);
+            scroll.destroy();
+        };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.3.1', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.3.2', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
