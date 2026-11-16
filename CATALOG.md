@@ -59,7 +59,13 @@ navigation stays within the Lampa activity stack. Builds without a native
 Anime entry receive an **Аниме** entry for the same section.
 
 **Рекомендации для вас** is followed by 21 genre and theme rows, including
-**Этти**, **Фэнтези**, and **Исэкай**. A row uses only entries tagged for that
+**Исэкай**, **Детектив и загадки**, and **Экшен** in that starting order.
+Once the profile has sufficient viewing or feedback across three distinct
+franchises, recurring genre preferences can move rows up. The ranking uses
+the same weighted signals and local model as the main recommendations,
+with a correction for genres that are common throughout the catalogue.
+The order is recomputed when recommendations refresh and stays fixed while
+the viewer browses. A row uses only entries tagged for that
 category. The remote's **←** and **→** move within a row and the next batch
 loads near its end. **↑** and **↓** move between rows. From the first row,
 **↑** returns to the tabs. Each shelf avoids repeating a catalogue franchise.

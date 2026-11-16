@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.4.0 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.4.1 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -18,10 +18,10 @@
     var SHIKIMORI = 'https://shikimori.io/api/animes';
     var GENRE = /^(action|adventure|comedy|drama|fantasy|horror|mystery|romance|sci fi|slice of life|sports|supernatural|thriller|psychological|historical|music|crime|suspense|mecha|ecchi)$/;
     var GENRE_ROWS = [
-        ['ecchi', 'Этти'], ['fantasy', 'Фэнтези'], ['isekai', 'Исэкай'], ['action', 'Экшен'],
+        ['isekai', 'Исэкай'], ['mystery', 'Детектив и загадки'], ['action', 'Экшен'], ['fantasy', 'Фэнтези'],
         ['adventure', 'Приключения'], ['comedy', 'Комедия'], ['romance', 'Романтика'],
         ['drama', 'Драма'], ['sci fi', 'Фантастика'], ['slice of life', 'Повседневность'],
-        ['supernatural', 'Сверхъестественное'], ['mystery', 'Детектив и загадки'],
+        ['supernatural', 'Сверхъестественное'], ['ecchi', 'Этти'],
         ['horror', 'Ужасы'], ['thriller', 'Триллер'], ['psychological', 'Психология'],
         ['historical', 'Историческое'], ['sports', 'Спорт'], ['music', 'Музыка'],
         ['crime', 'Криминал'], ['suspense', 'Саспенс'], ['mecha', 'Меха']
@@ -71,6 +71,39 @@
             }
         });
         return Math.max(-0.16, Math.min(0.16, score * 0.055));
+    }
+
+    function rankGenreRows(db, profile, predict) {
+        var liked = profile.signals, dislikes = maps();
+        function weight(total, seed) { return total + seed.weight; }
+        var total = liked.reduce(weight, 0);
+        // Establish a taste across several franchises before changing the starting order.
+        if (liked.length < 3 || total < 2.1) return GENRE_ROWS.slice();
+        (profile.negative || []).forEach(function (seed) { dislikes[seed.card.family] = seed.card; });
+        var avoided = Object.keys(dislikes).map(function (key) { return dislikes[key]; });
+        return GENRE_ROWS.map(function (genre, index) {
+            var tag = genre[0];
+            function tagged(card) { return card.tags.indexOf(tag) >= 0; }
+            var supporters = liked.filter(function (seed) { return tagged(seed.card); });
+            if (supporters.length < 2) return {genre: genre, index: index, priority: 0};
+            var evidence = supporters.reduce(weight, 0);
+            var popularity = (db.frequency[tag] || 0) / db.cards.length;
+            var preference = Math.max(0, evidence / total - popularity) * evidence / (evidence + 1.5);
+            var aversion = Math.max(0, avoided.filter(tagged).length / (avoided.length + 1) - popularity);
+            var review = profile.topics ? reviewAdjustment({tags: [tag]}, profile.topics) : 0;
+            var sample = db.tags[tag] || [];
+            var affinity = 0, count = 0;
+            // A small, evenly spaced catalogue sample adds the learned signal without ranking an entire shelf.
+            if (predict) for (var position = 0; position < Math.min(8, sample.length); position++) {
+                var card = sample[Math.floor((position + 0.5) * sample.length / Math.min(8, sample.length))];
+                if (card.restricted || card.upcoming) continue;
+                affinity += predict(card);
+                count++;
+            }
+            var score = preference - 0.3 * aversion + 1.5 * review + 0.18 * affinity / (count || 1);
+            return {genre: genre, index: index, priority: score >= 0.10 ? score : 0};
+        }).sort(function (a, b) { return b.priority - a.priority || a.index - b.index; })
+            .map(function (entry) { return entry.genre; });
     }
     var WORLD = /world|fantasy|apocalyp|dystopi|cyberpunk|steampunk|space|magic|alchemy|alchemist|school|medieval|historical|isekai|future|virtual reality|parallel dimension|urban|rural|mytholog|military|empire|kingdom|demons?|vampire|outer space|robots?|superpowers?|alien|^folklore$|^supernatural$/;
     var TONES = /coming of age|found family|time loop|time travel|time skip|character driven|tragedy|ensemble cast|redemption|revenge|survival|battle of wits|mind games|conspiracy|rivalry|politics|detective|murder|rebellion|tournament|family life|unrequited love|sacrifice|secret identity|memory manipulation|espionage|slow burn|episodic/;
@@ -863,7 +896,7 @@
             matchCatalog: matchCatalog, features: features, rankTaste: rankTaste, sufficient: sufficient,
             recommend: recommend, recommendationQueue: recommendationQueue, tasteNetwork: tasteNetwork,
             interestGroups: interestGroups, viewingWeight: viewingWeight, viewedEpisode: viewedEpisode,
-            analyzeReview: analyzeReview, reviewAdjustment: reviewAdjustment};
+            analyzeReview: analyzeReview, reviewAdjustment: reviewAdjustment, rankGenreRows: rankGenreRows};
         return;
     }
 
@@ -2167,7 +2200,7 @@
         }
 
         function genreShelves(profile, current, model, suggestions) {
-            var available = GENRE_ROWS.filter(function (pair) {
+            var available = rankGenreRows(db, profile, model.predict).filter(function (pair) {
                 return (db.tags[pair[0]] || []).some(function (card) {
                     return visible(card, prefs.disputed) && !card.upcoming && !profile.excluded[card.id];
                 });
@@ -2472,7 +2505,7 @@
         };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.4.0', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.4.1', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
