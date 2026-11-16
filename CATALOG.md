@@ -49,7 +49,8 @@ The generated `anime-assets-v32/catalog-*.js` files provide a script-loading
 fallback on TV builds where the catalogue JSON cannot be fetched with XHR.
 The plugin also uses a jsDelivr mirror of the same repository.
 
-On Lampa builds with the native Anime entry, open **Аниме → Подбор по вкусу**.
-Posters use the host's `card` template and navigation stays within the Lampa
-activity stack. Builds without a native Anime entry receive an **Аниме**
-entry for access to the same tools.
+Open **Аниме** from Lampa's main menu. The plugin handles the native Anime
+category route and presents its recommendations, search, favourites and
+history in that section. Posters use the host's `card` template and
+navigation stays within the Lampa activity stack. Builds without a native
+Anime entry receive an **Аниме** entry for the same section.

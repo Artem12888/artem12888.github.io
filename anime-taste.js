@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.2.0 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.2.1 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -1382,19 +1382,14 @@
         Lampa.Activity.push({url: 'anime-taste', title: 'Аниме', component: COMPONENT, tasteMode: mode, tasteCard: card, tasteFocus: focus});
     }
 
-    function mountAnimeTab() {
-        var current = Lampa.Activity && typeof Lampa.Activity.active === 'function' && Lampa.Activity.active();
-        if (!current || current.component !== 'category' || current.url !== 'anime' ||
-            !current.activity || typeof current.activity.render !== 'function') return;
-        var surface = $(current.activity.render());
-        var body = surface.find('.scroll__body').first();
-        if (!body.length) body = surface;
-        if (!body.length || body.children('.anime-taste-entry').length) return;
-        var bar = $('<div class="anime-taste-entry"></div>').prependTo(body);
-        var entry = button('Подбор по вкусу', function () { openTaste('recommendations'); }).appendTo(bar);
-        if (Lampa.Controller.enabled().name === 'content' && typeof Lampa.Controller.collectionAppend === 'function') {
-            Lampa.Controller.collectionAppend(entry);
-        }
+    function useNativeAnimeRoute() {
+        var push = Lampa.Activity.push;
+        Lampa.Activity.push = function (target) {
+            if (!target || target.component !== 'category' || target.url !== 'anime') return push.apply(this, arguments);
+            return push.call(this, Object.assign({}, target, {
+                component: COMPONENT, title: 'Аниме', tasteMode: 'recommendations'
+            }));
+        };
     }
 
     function animationCard(movie) {
@@ -1451,6 +1446,7 @@
         if (window.animeTasteReady) return;
         window.animeTasteReady = true;
         Lampa.Component.add(COMPONENT, TastePage);
+        useNativeAnimeRoute();
         registerSearch();
         monitorHistory();
         var menu = $('<li class="menu__item selector" data-action="anime_taste"></li>');
@@ -1463,13 +1459,11 @@
             if (nativeAnime.length) menu.detach();
             else if (target.length && !target.find('[data-action="anime_taste"]').length) target.append(menu);
             installCardButtons();
-            mountAnimeTab();
         }
         mountMenu();
         Lampa.Listener.follow('activity', function (event) {
             if (event.type !== 'start') return;
             mountMenu();
-            setTimeout(mountAnimeTab, 120);
         });
         // Stable YummyAnime can finish loading after this extension.
         var attempts = 0;
@@ -1488,7 +1482,7 @@
             actions.prepend(add);
         });
         $('<style></style>').text([
-            '.anime-taste{padding:0 1.5em 2em}', '.anime-taste-entry{padding:0 1.5em .7em}',
+            '.anime-taste{padding:0 1.5em 2em}',
             '.anime-taste__toolbar{display:flex;flex-wrap:wrap;margin-bottom:.8em}',
             '.anime-taste__button{margin:.18em .45em .18em 0}',
             '.anime-taste__button.is-current{text-decoration:underline;text-underline-offset:.21em}',
@@ -1817,7 +1811,7 @@
         page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.2.0', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.2.1', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
