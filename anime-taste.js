@@ -1,5 +1,5 @@
-/* Аниме по вкусу 2.0.0 — персональные рекомендации для Lampa.
- * Каталог Manami: https://github.com/manami-project/anime-offline-database
+/* Аниме по вкусу 3.0.0 — персональные рекомендации для Lampa.
+ * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
 (function (window) {
@@ -10,10 +10,38 @@
     var STORAGE = 'anime_taste_v1';
     var HISTORY = 'anime_taste_history_v2';
     var SYNOPSES = 'anime_taste_synopses_v2';
-    var CATALOG = 'https://artem12888.github.io/anime-catalog-2.json';
-    var GENRE = /^(action|adventure|comedy|drama|fantasy|horror|mystery|romance|sci fi|slice of life|sports|supernatural|thriller|psychological|historical|music|crime|suspense|mecha)$/;
-    var WORLD = /world|fantasy|apocalyp|dystopi|cyberpunk|steampunk|space|magic|alchemy|alchemist|school|medieval|historical|isekai|future|virtual reality|parallel dimension|urban|rural|mytholog|military|empire|kingdom|demons?|vampire|outer space|robots?|superpowers?|alien/;
+    var CATALOG = 'https://artem12888.github.io/anime-catalog-3.json';
+    var STORY_INDEX = 'https://artem12888.github.io/anime-story-3.json';
+    var GENRE = /^(action|adventure|comedy|drama|fantasy|horror|mystery|romance|sci fi|slice of life|sports|supernatural|thriller|psychological|historical|music|crime|suspense|mecha|ecchi)$/;
+    var WORLD = /world|fantasy|apocalyp|dystopi|cyberpunk|steampunk|space|magic|alchemy|alchemist|school|medieval|historical|isekai|future|virtual reality|parallel dimension|urban|rural|mytholog|military|empire|kingdom|demons?|vampire|outer space|robots?|superpowers?|alien|^folklore$|^supernatural$/;
     var TONES = /coming of age|found family|time loop|time travel|time skip|character driven|tragedy|ensemble cast|redemption|revenge|survival|battle of wits|mind games|conspiracy|rivalry|politics|detective|murder|rebellion|tournament|family life|unrequited love|sacrifice|secret identity|memory manipulation|espionage|slow burn|episodic/;
+    var MOOD = /^(comedy|drama|thriller|horror|psychological|slice of life(?: drama)?|dark fantasy|action comedy|supernatural (?:drama|thriller)|romantic comedy|slapstick|parody|heartwarming|wholesome|melancholy|nostalgia|iyashikei|angst|tragedy|surreal comedy|black comedy|grimdark|suspense|ecchi|episodic)$/;
+    var CHARACTERS = /protagonist|ensemble cast|strong (?:female|male) lead|anti ?hero|found family|friendship|mentor|siblings|rivalry|kuudere|tsundere|underdog|overpowered|harem|classmates/;
+    var FOCUS = {
+        all: 'Похожие на этот тайтл', world: 'Похожий мир', plot: 'Похожий сюжет',
+        mood: 'Такая же атмосфера', characters: 'Похожие персонажи'
+    };
+    var DIMENSIONS = {
+        all: [0.19, 0.23, 0.22, 0.16, 0.11, 0.09],
+        world: [0.08, 0.61, 0.14, 0.10, 0.04, 0.03],
+        plot: [0.06, 0.15, 0.54, 0.16, 0.05, 0.04],
+        mood: [0.13, 0.08, 0.10, 0.08, 0.55, 0.06],
+        characters: [0.08, 0.11, 0.10, 0.08, 0.07, 0.56]
+    };
+    var MOTIFS = [
+        [/^school$|school life|boarding school|academy|high school|school club/, /^supernatural$|^magic$|^demon$|^urban fantasy$|angel/, /^action$|fighting|battle|combat/],
+        [/^harem$|female harem|male harem/, /^comedy$|^ecchi$|romcom/, /^supernatural$|^magic$|^demon$|^urban fantasy$/],
+        [/^school$|school life|boarding school|academy|high school/, /^harem$|female harem|male harem/, /^action$|fighting|battle|combat/],
+        [/battle of wits|^psychological$|^detective$/, /crime|conspiracy|secret identity/, /suspense|thriller|mystery/],
+        [/post apocaly|^dystopia$|isolated society/, /survival|rebellion|^military$/, /^action$|thriller|mystery/],
+        [/^slice of life$|^daily life$|iyashikei/, /friendship|found family|coming of age/, /wholesome|heartwarming|^comedy$/],
+        [/competition|tournament|^sports$/, /teamwork|rivalry|underdog/, /coming of age|^comedy$|^drama$/],
+        [/^sports$/, /^team sport|teamwork/, /competition|tournament|^school|high school/],
+        [/folklore|mytholog|youkai|yokai|^spirits?$/, /episodic|slice of life|iyashikei/, /supernatural|^mystery$/],
+        [/^psychological$|battle of wits/, /moral|judge|justice|law and order|social commentary/, /^supernatural$|^thriller$|^mystery$/],
+        [/time travel|time loop/, /revenge|redemption|detective|conspiracy/, /drama|psychological|thriller|mystery/],
+        [/^isekai$|alternative world|fantasy world/, /found family|^journey$|^adventure$/, /^magic$|mytholog|^demon$/]
+    ];
     var VARIANTS = {'science fiction': 'sci fi', 'dystopian': 'dystopia', 'post apocalypse': 'post apocalyptic',
         'mind games': 'battle of wits', 'rivalries': 'rivalry', 'detectives': 'detective', 'demons': 'demon',
         'assassins': 'assassin', 'robots': 'robot', 'super powers': 'superpowers', 'super power': 'superpowers',
@@ -56,7 +84,6 @@
         ['school life', /\b(?:high school|middle school|school students|school life)\b/],
         ['demon', /\b(?:demons?|demon king|demonic)\b/]
     ];
-    var STOP = /^(?:about|after|again|also|along|already|always|among|around|because|before|being|between|could|does|during|everything|finds?|first|from|have|having|however|into|just|know|later|life|little|long|make|many|more|most|much|must|never|only|other|over|people|right|said|seems?|since|some|still|such|than|that|their|them|then|there|these|they|things?|this|those|through|time|together|under|upon|very|want|well|were|what|when|where|which|while|will|with|without|world|would|years?|young)$/;
     var ABBREVIATIONS = {
         fmab: 'Fullmetal Alchemist Brotherhood', aot: 'Attack on Titan', snk: 'Shingeki no Kyojin',
         jjk: 'Jujutsu Kaisen', hxh: 'Hunter x Hunter', sao: 'Sword Art Online',
@@ -210,7 +237,8 @@
     }
 
     function indexCatalog(raw) {
-        var db = {cards: [], ids: maps(), names: maps(), frequency: maps(), tags: maps()};
+        var db = {cards: [], ids: maps(), names: maps(), frequency: maps(), tags: maps(), tmdb: maps(), families: maps(),
+            entries: maps(), story: maps(), updated: raw.updated};
         raw.data.forEach(function (row) {
             var titles = [row[1]].concat(row[7]);
             var names = unique(titles.map(normalTitle));
@@ -218,9 +246,17 @@
             var card = {id: row[0], title: row[1], titles: titles, indexed: names, year: row[2], type: row[3],
                 rating: row[4], kitsu: row[5], episodes: row[10],
                 poster: image ? 'https://' + raw.imageHosts[Number(image[1])] + '/' + image[2] : '',
-                tags: unique(row[8].map(function (id) { return tagKey(raw.tags[id]); })), related: row[9]};
+                tags: unique(row[8].map(function (id) { return tagKey(raw.tags[id]); })), related: row[9],
+                age: row[12] || '', restricted: row[13] || 0, family: row[14] || row[0],
+                next: row[15] || '', tmdb: row[16] || null, upcoming: Boolean(row[17])};
             db.cards.push(card);
             db.ids[card.id] = card;
+            (db.families[card.family] || (db.families[card.family] = [])).push(card);
+            var root = db.entries[card.family];
+            if ((card.type === 'TV' || card.type === 'ONA') && card.year && !card.upcoming &&
+                !card.restricted && (!root || card.year < root.year)) db.entries[card.family] = card;
+            (row[11] || []).forEach(function (id) { if (!db.ids[id]) db.ids[id] = card; });
+            if (card.tmdb) (db.tmdb[card.tmdb[0]] || (db.tmdb[card.tmdb[0]] = [])).push(card);
             names.forEach(function (name) { (db.names[name] || (db.names[name] = [])).push(card); });
             card.tags.forEach(function (tag) {
                 db.frequency[tag] = (db.frequency[tag] || 0) + 1;
@@ -230,13 +266,15 @@
         return db;
     }
 
-    function catalogueSearch(db, text, likes) {
+    function visible(card, disputed) { return card.restricted === 0 || card.restricted === 1 && disputed; }
+
+    function catalogueSearch(db, text, likes, disputed) {
         var query = parseQuery(text);
         if (!query.variants.length) return [];
         function collect(aliases) {
             var cards = [];
             aliases.forEach(function (alias) { Array.prototype.push.apply(cards, db.names[alias] || []); });
-            return cards;
+            return cards.filter(function (card) { return visible(card, disputed); });
         }
         var exact = rankSearch(query, collect(query.variants), likes);
         if (exact.length && exact[0].score >= 90) return exact.slice(0, 24);
@@ -258,26 +296,41 @@
         return result.slice(0, 24);
     }
 
-    function matchCatalog(db, source) {
+    function matchCatalog(db, source, season) {
         if (!source) return null;
         if (source.media_type === 'movie' || source.method === 'movie' || source.original_title && !source.original_name &&
             (source.release_date && !source.first_air_date) && !source.anime_id && !source.yani_id) return null;
         var mal = remoteMal(source);
         if (mal && db.ids['m' + mal]) return db.ids['m' + mal];
+        var native = (!source.source || source.source === 'tmdb' || source.source === 'cub') && db.tmdb[source.id];
+        if (season && native) {
+            var exactSeason = native.filter(function (card) { return card.tmdb[1] === Number(season); });
+            if (exactSeason.length === 1) return exactSeason[0];
+        }
         var names = [source.original_name, source.original_title, source.title, source.name].concat(source.titles || []);
         var year = Number(source.year || String(source.first_air_date || source.release_date || '').slice(0, 4));
         var exact = [];
         unique(names.map(normalTitle)).forEach(function (name) { exact = exact.concat(db.names[name] || []); });
         exact = uniqueCards(exact);
         var sameYear = exact.filter(function (card) { return card.year === year; });
-        if (sameYear.length === 1) return sameYear[0];
-        return exact.length === 1 && (!year || !exact[0].year || Math.abs(exact[0].year - year) <= 1) ? exact[0] : null;
+        var base = sameYear.length === 1 ? sameYear[0] :
+            exact.length === 1 && (!year || !exact[0].year || Math.abs(exact[0].year - year) <= 1) ? exact[0] : null;
+        if (!base || Number(season) < 2 || !season) return base;
+        var number = Number(season);
+        var label = new RegExp('(?:^| )(?:season ' + number + '|'+ number + '(?:st|nd|rd|th) season|сезон ' + number +
+            ')(?: |$)');
+        var matching = db.families[base.family].filter(function (card) {
+            return card.type !== 'OVA' && card.indexed.some(function (name) { return label.test(name); });
+        });
+        return matching.length === 1 ? matching[0] : null;
     }
 
     function features(card, synopsis) {
-        var genres = maps(), world = maps(), plot = maps(), themes = maps(), words = maps();
+        var genres = maps(), world = maps(), plot = maps(), themes = maps(), mood = maps(), characters = maps();
         card.tags.forEach(function (key) {
             if (GENRE.test(key)) genres[key] = 1;
+            if (MOOD.test(key)) mood[key] = 1;
+            if (CHARACTERS.test(key)) characters[key] = 1;
             if (WORLD.test(key)) world[key] = 1;
             else if (TONES.test(key)) plot[key] = 1;
             else if (!GENRE.test(key)) themes[key] = 1;
@@ -285,12 +338,12 @@
         var description = String(synopsis || '').replace(/\[[^\]]+\]/g, ' ').toLowerCase();
         STORY.forEach(function (rule) { if (rule[1].test(description)) plot[rule[0]] = 1; });
         SETTING.forEach(function (rule) { if (rule[1].test(description)) world[rule[0]] = 1; });
-        clean(description).split(' ').forEach(function (word) {
-            if (word.length < 5 || !/^[a-z]+$/.test(word) || STOP.test(word)) return;
-            var stem = word.replace(/(?:ing|ed|es|s)$/, '');
-            if (stem.length >= 4) words[stem] = 1;
+        var all = Object.keys(genres).concat(Object.keys(world), Object.keys(plot), Object.keys(themes));
+        var motifs = MOTIFS.map(function (pattern) {
+            return pattern.every(function (part) { return all.some(function (tag) { return part.test(tag); }); });
         });
-        return {genres: genres, world: world, plot: plot, themes: themes, words: words};
+        return {genres: genres, world: world, plot: plot, themes: themes,
+            mood: mood, characters: characters, motifs: motifs};
     }
 
     function overlap(left, right, rarity) {
@@ -313,32 +366,56 @@
 
     function tagLabel(word) { return property(LABEL, word) || word; }
 
-    function compareTaste(seed, candidate, rarity) {
+    function compareTaste(seed, candidate, rarity, focus, similarity, bothDescriptions) {
         var left = seed.features, right = candidate.features;
         var genres = overlap(left.genres, right.genres, rarity);
         var world = overlap(left.world, right.world, rarity);
         var plot = overlap(left.plot, right.plot, rarity);
         var themes = overlap(left.themes, right.themes, rarity);
-        var words = overlap(left.words, right.words, function () { return 1; });
+        var mood = overlap(left.mood, right.mood, rarity);
+        var cast = overlap(left.characters, right.characters, rarity);
+        var motifs = left.motifs.reduce(function (count, hasMotif, index) {
+            return count + Number(hasMotif && right.motifs[index]);
+        }, 0);
+        var weights = DIMENSIONS[focus] || DIMENSIONS.all;
+        var axes = [genres, world, plot, themes, mood, cast];
+        var score = axes.reduce(function (sum, axis, index) { return sum + axis.score * weights[index]; }, 0);
         var related = seed.card.related.indexOf(candidate.card.id) >= 0 || candidate.card.related.indexOf(seed.card.id) >= 0;
-        var score = 0.18 * genres.score + 0.28 * world.score + 0.29 * plot.score + 0.25 * themes.score
-            + Math.min(0.18, 2 * words.score) + (related ? 0.14 : 0);
-        return {score: score, specific: world.shared.length + plot.shared.length + themes.shared.length + Number(related),
-            reasons: [explain('Мир', world.shared), explain('Сюжет', plot.shared), explain('Темы', themes.shared),
-                explain('Жанры', genres.shared), related ? 'Связано в каталоге' : ''].filter(Boolean)};
+        score += Math.min(3, motifs) * (focus === 'all' ? 0.12 : 0.055) + similarity * (focus === 'plot' ? 0.24 : 0.14)
+            + (related ? 0.08 : 0);
+        var labels = ['Жанры', 'Мир', 'Сюжет', 'Темы', 'Атмосфера', 'Персонажи'];
+        var reasons = axes.map(function (axis, index) {
+            return {text: explain(labels[index], axis.shared), weight: axis.score * weights[index]};
+        }).filter(function (row) { return row.text; }).sort(function (a, b) { return b.weight - a.weight; })
+            .map(function (row) { return row.text; });
+        if (similarity > 0.25 && (focus === 'plot' || !reasons.length)) {
+            reasons.unshift(bothDescriptions ? 'Сходство сюжетных описаний' : 'Сходство сюжетных тем');
+        }
+        return {score: score, specific: world.shared.length + plot.shared.length + themes.shared.length
+                + mood.shared.length + cast.shared.length + Number(similarity > 0.15), reasons: reasons};
     }
 
-    function rankTaste(db, seeds, candidates, descriptions) {
+    function rankTaste(db, seeds, candidates, descriptions, focus, negative) {
         function rarity(key) {
             return Math.min(1.65, 0.45 + Math.log((db.cards.length + 1) / ((db.frequency[key] || 0) + 1)) * 0.2);
         }
-        var prepared = seeds.map(function (seed) {
-            return {card: seed.card, features: features(seed.card, descriptions[seed.card.id]), weight: seed.weight};
-        });
+        function prepare(seed) {
+            var semantic = db.story[seed.card.id];
+            var neighbors = maps();
+            if (semantic) semantic[1].forEach(function (row) {
+                neighbors[row[0]] = Math.max(0, (row[1] - 7300) / 1900) * (semantic[0] ? 1 : 0.7);
+            });
+            return {card: seed.card, features: features(seed.card, descriptions[seed.card.id]),
+                weight: seed.weight, focus: seed.focus, neighbors: neighbors, described: semantic && semantic[0]};
+        }
+        var prepared = seeds.map(prepare);
+        var unwanted = (negative || []).map(prepare);
         var ranked = candidates.map(function (card) {
             var candidate = {card: card, features: features(card, descriptions[card.id])};
+            var described = db.story[card.id] && db.story[card.id][0];
             var hits = prepared.map(function (seed) {
-                var hit = compareTaste(seed, candidate, rarity);
+                var hit = compareTaste(seed, candidate, rarity, focus === 'all' && seed.focus || focus,
+                    seed.neighbors[card.id] || 0, described && seed.described);
                 hit.seed = seed.card.title;
                 hit.score *= seed.weight;
                 return hit;
@@ -346,19 +423,62 @@
             if (!hits.length) return null;
             var primary = hits[0];
             var agreement = hits.slice(1, 4).reduce(function (sum, hit) { return sum + hit.score; }, 0);
-            return {card: card, score: primary.score + 0.16 * agreement + 0.002 * card.rating,
+            var penalty = unwanted.reduce(function (highest, seed) {
+                if (card.family === seed.card.family) return Math.max(highest, 0.34);
+                var similarity = compareTaste(seed, candidate, rarity, 'all', seed.neighbors[card.id] || 0).score;
+                return Math.max(highest, Math.max(0, similarity - 0.17) * 0.42);
+            }, 0);
+            return {card: card, score: primary.score + 0.12 * agreement + 0.002 * card.rating - penalty,
                 reasons: ['Похоже на «' + primary.seed + '»'].concat(primary.reasons.slice(0, 3))};
         }).filter(Boolean).sort(function (a, b) { return b.score - a.score || a.card.id.localeCompare(b.card.id); });
-        // One entry per closely related set near the top leaves room for stories in other worlds.
-        var diverse = [], deferred = [];
-        ranked.forEach(function (entry) {
-            var card = entry.card;
-            var hasRelated = diverse.some(function (other) {
-                return card.related.indexOf(other.card.id) >= 0 || other.card.related.indexOf(card.id) >= 0;
-            });
-            (hasRelated ? deferred : diverse).push(entry);
+        var shown = maps();
+        return ranked.filter(function (entry) {
+            if (shown[entry.card.family]) return false;
+            shown[entry.card.family] = true;
+            return entry.score > 0;
         });
-        return diverse.slice(0, 18).concat(deferred.slice(0, 4), diverse.slice(18), deferred.slice(4));
+    }
+
+    function recommend(db, seeds, excluded, disputed, focus, negative) {
+        var scores = maps(), neighbors = maps();
+        function eligible(card) { return card && !card.upcoming && visible(card, disputed) && !excluded[card.id]; }
+        seeds.forEach(function (seed) {
+            var tags = seed.card.tags.filter(function (tag) { return (db.frequency[tag] || 0) > 2; });
+            tags.forEach(function (tag) {
+                var specificity = Math.log(db.cards.length / db.frequency[tag]);
+                var weight = GENRE.test(tag) ? 0.35 : Math.max(0.5, Math.min(3.8, specificity));
+                db.tags[tag].forEach(function (card) {
+                    if (eligible(card)) scores[card.id] = (scores[card.id] || 0) + seed.weight * weight;
+                });
+            });
+            var story = db.story[seed.card.id];
+            if (story) story[1].forEach(function (row) {
+                if (eligible(db.ids[row[0]])) neighbors[row[0]] = true;
+            });
+            seed.card.related.forEach(function (id) { if (eligible(db.ids[id])) neighbors[id] = true; });
+        });
+        var shortlist = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; }).slice(0, 180);
+        var candidates = uniqueCards(shortlist.concat(Object.keys(neighbors)).map(function (id) {
+            var card = db.ids[id], first = db.entries[card.family];
+            return eligible(first) ? first : card;
+        }));
+        return rankTaste(db, seeds, candidates, {}, focus || 'all', negative);
+    }
+
+    function interestGroups(seeds) {
+        var groups = [];
+        seeds.forEach(function (seed) {
+            var own = features(seed.card, '');
+            var fits = groups.map(function (group) {
+                var shared = overlap(own.genres, group.anchor.genres, function () { return 1; }).score;
+                var world = overlap(own.world, group.anchor.world, function () { return 1; }).score;
+                return {group: group, score: shared * 0.58 + world * 0.42};
+            }).sort(function (a, b) { return b.score - a.score; });
+            var best = fits[0];
+            if (best && (best.score >= 0.32 || groups.length === 4)) best.group.seeds.push(seed);
+            else groups.push({anchor: own, title: seed.card.title, seeds: [seed]});
+        });
+        return groups;
     }
 
     function sufficient(road) {
@@ -370,9 +490,70 @@
         return percent >= 75 || time >= 180 && percent >= 30 || !duration && time >= 480;
     }
 
+    function progressOf(road) {
+        if (typeof road === 'number') return Math.max(0, Math.min(100, road));
+        if (!road) return 0;
+        var ratio = Number(road.percent) || 100 * Number(road.time || road.position || 0) / (Number(road.duration) || Infinity);
+        return Math.round(Math.max(0, Math.min(100, ratio)));
+    }
+
+    function viewedEpisode(previous, event) {
+        var percent = progressOf(event.road);
+        var time = Number(event.road.time || event.road.position || 0);
+        if (percent < 8 && time < 60 && !sufficient(event.road)) return previous;
+        var stamp = Number(event.stamp) || previous.last || Date.now();
+        var episodes = Object.assign({}, previous.episodes || {});
+        var season = Number(event.season || event.road.season) || 0;
+        var episode = Number(event.episode || event.road.episode) || 0;
+        var hash = String(event.hash || event.road.hash || '').replace(/[^0-9a-z_-]/gi, '').slice(0, 70);
+        var key = episode ? season + ':' + episode : hash ? 'h:' + hash : '';
+        var resumed = Number(previous.resumed) || 0;
+        var lastSession = previous.lastSession || 0;
+        if (event.session && event.session !== lastSession) {
+            if (previous.last && (previous.last < stamp - 15 * 60000 || episodes[key] && episodes[key].percent < 85)) resumed++;
+            lastSession = event.session;
+        }
+        if (key) {
+            var prior = episodes[key] || {percent: 0, replays: 0, last: 0};
+            var replays = prior.replays || 0;
+            var replaySession = prior.replaySession || 0;
+            if (prior.percent >= 85 && percent >= 85 && event.replay && event.session && event.session !== replaySession) {
+                replays++;
+                replaySession = event.session;
+            }
+            episodes[key] = {percent: Math.max(prior.percent, percent), last: Math.max(prior.last, stamp),
+                season: season, episode: episode, replays: replays, replaySession: replaySession};
+            var keys = Object.keys(episodes);
+            if (keys.length > 180) keys.sort(function (a, b) { return episodes[b].last - episodes[a].last; })
+                .slice(180).forEach(function (id) { delete episodes[id]; });
+        }
+        return {last: Math.max(previous.last || 0, stamp), percent: Math.max(previous.percent || 0, percent), episodes: episodes,
+            lastSession: lastSession, resumed: resumed, substantial: Boolean(previous.substantial || sufficient(event.road)),
+            marked: Boolean(previous.marked || event.marked)};
+    }
+
+    function watchStats(entry) {
+        return Object.keys(entry.episodes || {}).reduce(function (result, key) {
+            var episode = entry.episodes[key];
+            result.finished += Number(episode.percent >= 85);
+            result.replays += episode.replays || 0;
+            return result;
+        }, {finished: 0, replays: 0});
+    }
+
+    function viewingWeight(entry) {
+        if (!entry) return 0;
+        var counts = watchStats(entry);
+        if (entry.marked || counts.finished) return Math.min(0.96, 0.68 + Math.log(1 + counts.finished) * 0.07 +
+            Math.min(0.12, counts.replays * 0.05 + (entry.resumed || 0) * 0.025));
+        if (entry.substantial || entry.percent >= 30) return entry.percent >= 75 ? 0.72 : 0.46;
+        return 0;
+    }
+
     if (typeof module === 'object' && module.exports) {
         module.exports = {parseQuery: parseQuery, indexCatalog: indexCatalog, catalogueSearch: catalogueSearch,
-            matchCatalog: matchCatalog, features: features, rankTaste: rankTaste, sufficient: sufficient};
+            matchCatalog: matchCatalog, features: features, rankTaste: rankTaste, sufficient: sufficient,
+            recommend: recommend, interestGroups: interestGroups, viewingWeight: viewingWeight, viewedEpisode: viewedEpisode};
         return;
     }
 
@@ -382,6 +563,7 @@
     window.animeTasteInstalled = true;
     var accountCache;
     var catalogRequest;
+    var storyRequest;
     var plotCache = maps();
     var nativeCache = maps();
     var activePlayback;
@@ -394,7 +576,8 @@
             try { saved = JSON.parse(saved); } catch (error) { saved = {}; }
         }
         saved = saved || {};
-        return {likes: saved.likes || {}, hidden: saved.hidden || {}, ignored: saved.ignored || {}};
+        return {likes: saved.likes || {}, hidden: saved.hidden || {}, ignored: saved.ignored || {},
+            disputed: saved.disputed === true};
     }
 
     function publicApi() {
@@ -420,7 +603,7 @@
     function catalog() {
         if (!catalogRequest) {
             catalogRequest = requestJson(CATALOG, 22000).then(function (raw) {
-                if (raw.version !== 2 || !Array.isArray(raw.data)) throw new Error('Формат каталога изменился.');
+                if (raw.version !== 3 || !Array.isArray(raw.data)) throw new Error('Формат каталога изменился.');
                 return indexCatalog(raw);
             }).catch(function () {
                 catalogRequest = null;
@@ -430,8 +613,18 @@
         return catalogRequest;
     }
 
+    function loadStories(db) {
+        if (!storyRequest) {
+            storyRequest = requestJson(STORY_INDEX, 14000).then(function (raw) {
+                if (raw.updated === db.updated && raw.entries) db.story = raw.entries;
+                else storyRequest = null;
+            }).catch(function () { storyRequest = null; });
+        }
+        return storyRequest;
+    }
+
     function searchIndependent(text, likes) {
-        return catalog().then(function (db) { return catalogueSearch(db, text, likes); });
+        return catalog().then(function (db) { return catalogueSearch(db, text, likes, data().disputed); });
     }
 
     function reading(name) {
@@ -477,26 +670,102 @@
 
     function savedHistory() { return reading(historyFile()); }
 
+    function guidanceFile() { return historyFile() + '_preferences'; }
+
+    function guidance() {
+        var saved = reading(guidanceFile());
+        return {feedback: saved.feedback || {}, bindings: saved.bindings || {}, unresolved: saved.unresolved || {}};
+    }
+
+    function bindKey(source, season) {
+        var key = nativeKey(source);
+        return key && key + ':' + (Number(season) || 0);
+    }
+
+    function resolveViewing(db, rules, source, season) {
+        var key = bindKey(source, season);
+        var manual = rules.bindings[key];
+        return manual && db.ids[manual] || matchCatalog(db, source, season);
+    }
+
+    function setFeedback(card, action, focus) {
+        var rules = guidance();
+        if (!action) delete rules.feedback[card.id];
+        else rules.feedback[card.id] = {action: action, focus: focus || 'all', when: Date.now()};
+        Lampa.Storage.set(guidanceFile(), rules);
+    }
+
+    function rememberBinding(record, card) {
+        var rules = guidance();
+        rules.bindings[bindKey(record.source, record.season)] = card.id;
+        delete rules.unresolved[bindKey(record.source, record.season)];
+        Lampa.Storage.set(guidanceFile(), rules);
+    }
+
+    function canonicalHistory(db, watch) {
+        var changed = false;
+        Object.keys(watch).forEach(function (id) {
+            var card = db.ids[id];
+            if (!card || card.id === id) return;
+            var left = watch[id], right = watch[card.id];
+            if (right) {
+                var latest = left.last > right.last ? left : right;
+                var episodes = Object.assign({}, right.episodes || {});
+                Object.keys(left.episodes || {}).forEach(function (key) {
+                    var a = left.episodes[key], b = episodes[key];
+                    if (!b) { episodes[key] = a; return; }
+                    episodes[key] = Object.assign({}, a.last > b.last ? a : b,
+                        {percent: Math.max(a.percent, b.percent), replays: Math.max(a.replays || 0, b.replays || 0)});
+                });
+                watch[card.id] = Object.assign({}, latest, {episodes: episodes,
+                    percent: Math.max(left.percent || 0, right.percent || 0),
+                    marked: Boolean(left.marked || right.marked), substantial: Boolean(left.substantial || right.substantial),
+                    native: latest.native || left.native || right.native, yani: latest.yani || left.yani || right.yani});
+            } else watch[card.id] = left;
+            delete watch[id];
+            changed = true;
+        });
+        return changed;
+    }
+
     function storeViews(db, file, events) {
         if (historyFile() !== file) return;
-        var watched = reading(file), changed = false;
+        var watched = reading(file), rules = guidance(), changed = canonicalHistory(db, watched), unresolved = false;
         events.forEach(function (event) {
-            var card = event.card || matchCatalog(db, event.source);
-            if (!card || !sufficient(event.road)) return;
+            if (!event.road) return;
+            var season = event.season || event.road.season;
+            var card = event.card || resolveViewing(db, rules, event.source, season);
+            var key = bindKey(event.source, season);
+            if (!card) {
+                if (key && event.native && sufficient(event.road) && !rules.unresolved[key] && Object.keys(rules.unresolved).length < 100) {
+                    var source = event.source;
+                    rules.unresolved[key] = {source: {id: source.id, source: source.source || 'tmdb',
+                        original_name: source.original_name, name: source.name || source.title, first_air_date: source.first_air_date,
+                        original_language: source.original_language, genre_ids: source.genre_ids},
+                    season: Number(season) || 0, stamp: Number(event.stamp) || Date.now(), road: {
+                        percent: progressOf(event.road), episode: Number(event.road.episode) || Number(event.episode) || 0}};
+                    unresolved = true;
+                }
+                return;
+            }
+            if (key && rules.unresolved[key]) {
+                delete rules.unresolved[key];
+                unresolved = true;
+            }
             var old = watched[card.id];
-            var stamp = Number(event.stamp) || (old ? old.last : Date.now());
-            var position = typeof event.road === 'number' ? event.road :
-                Number(event.road.percent) || 100 * Number(event.road.time || 0) / (Number(event.road.duration) || Infinity);
-            position = Math.max(0, Math.min(100, position));
-            var native = event.native && nativeCard(event.source);
             var previous = old || {last: 0, percent: 0};
-            var next = {last: Math.max(previous.last, stamp), percent: Math.max(previous.percent, Math.round(position)),
-                native: native || previous.native || null, yani: event.yani || previous.yani || 0, title: card.title};
+            var next = viewedEpisode(previous, event);
+            if (next === previous) return;
+            var native = event.native && nativeCard(event.source);
+            next.native = native || previous.native || null;
+            next.yani = event.yani || previous.yani || 0;
+            next.title = card.title;
             if (old && JSON.stringify(old) === JSON.stringify(next)) return;
             watched[card.id] = next;
             changed = true;
         });
         if (changed) Lampa.Storage.set(file, watched);
+        if (unresolved) Lampa.Storage.set(guidanceFile(), rules);
     }
 
     function getFavorites(type) {
@@ -514,9 +783,8 @@
         var timeline = reading(timelineFile()), keyed = maps();
         Object.keys(timeline).forEach(function (hash) {
             var road = timeline[hash];
-            if (!road || !road.card || !sufficient(road)) return;
-            var prior = keyed[road.card];
-            if (!prior || Number(road.updated || 0) >= Number(prior.updated || 0)) keyed[road.card] = road;
+            if (!road || !road.card) return;
+            (keyed[road.card] || (keyed[road.card] = [])).push({road: road, hash: hash});
         });
         var viewed = getFavorites('viewed');
         var explicit = maps();
@@ -524,33 +792,39 @@
         getFavorites('history').concat(viewed).forEach(function (source) {
             if (!isAnimeCandidate(source)) return;
             var key = nativeKey(source);
-            var card = matchCatalog(db, source);
-            if (!key || !card) return;
-            cache[key] = {source: source, card: card};
-            if (explicit[key]) events.push({source: source, card: card, road: {percent: 100}, native: true});
+            if (!key) return;
+            cache[key] = {source: source};
+            if (explicit[key]) events.push({source: source, road: {percent: 100}, native: true, marked: true});
         });
         Object.keys(cache).forEach(function (key) {
             var cached = cache[key];
-            var road = keyed[key];
+            var rows = keyed[key] || [];
             var source = cached.source;
             var original = source.original_name || source.original_title;
-            // Older Lampa saves contain only a hash. Match historical season-one keys without touching the timeline.
-            if (!road && original && Lampa.Utils && typeof Lampa.Utils.hash === 'function') {
+            if (!rows.length && original && Lampa.Utils && typeof Lampa.Utils.hash === 'function') {
                 for (var episode = 1; episode <= 24; episode++) {
-                    var candidate = timeline[Lampa.Utils.hash('1' + episode + original)];
-                    if (sufficient(candidate) && (!road || Number(candidate.updated || 0) >= Number(road.updated || 0))) road = candidate;
+                    var hash = Lampa.Utils.hash('1' + episode + original);
+                    var saved = timeline[hash];
+                    if (saved) rows.push({road: saved, hash: hash, episode: episode, season: 1});
                 }
             }
-            if (road) events.push({source: source, card: cached.card, road: road, stamp: road.updated, native: true});
+            rows.forEach(function (row) {
+                var road = row.road;
+                events.push({source: source, road: road, stamp: road.updated, native: true, hash: row.hash,
+                    episode: road.episode || row.episode, season: road.season || row.season});
+            });
         });
         var supplemental = reading('yani_playback_history');
         Object.keys(supplemental).forEach(function (id) {
             var row = supplemental[id];
             if (!row) return;
-            var finished = Object.keys(row.finished_episodes || {}).some(function (episode) { return Boolean(row.finished_episodes[episode]); });
             var source = Object.assign({anime_id: Number(id) || 0}, row.card || row);
-            events.push({source: source, road: finished ? {percent: 100} : row,
-                stamp: row.updated_at, yani: /^\d+$/.test(id) ? Number(id) : 0});
+            var yani = /^\d+$/.test(id) ? Number(id) : 0;
+            Object.keys(row.finished_episodes || {}).forEach(function (episode) {
+                if (row.finished_episodes[episode] && /^\d+$/.test(episode)) events.push({source: source,
+                    road: {percent: 100}, episode: Number(episode), stamp: row.updated_at, yani: yani});
+            });
+            events.push({source: source, road: row, episode: row.number, stamp: row.updated_at, yani: yani});
         });
         storeViews(db, file, events);
         return reading(file);
@@ -596,7 +870,11 @@
         Object.keys(supplemental).forEach(function (id) {
             if (ignored[id] && likes[id] === 1) delete likes[id];
         });
-        return {likes: likes, hidden: hidden, supplemental: supplemental};
+        var rules = guidance(), feedback = maps();
+        Object.keys(rules.feedback).forEach(function (id) {
+            if (db.ids[id]) feedback[db.ids[id].id] = rules.feedback[id];
+        });
+        return {likes: likes, hidden: hidden, supplemental: supplemental, feedback: feedback, disputed: saved.disputed};
     }
 
     function compactPreference(card, stamp) {
@@ -644,58 +922,47 @@
         return plotCache[card.id];
     }
 
-    function independentSuggestions(db, prefs, watch, source, progress) {
-        var order = Object.keys(prefs.likes).sort(function (a, b) { return prefs.likes[b] - prefs.likes[a]; });
-        var watched = Object.keys(watch).filter(function (id) { return db.ids[id]; }).sort(function (a, b) {
-            return watch[b].last - watch[a].last;
+    function tasteProfile(db, prefs, watch, source) {
+        var feedback = prefs.feedback, excluded = maps(), families = maps();
+        var keys = unique(Object.keys(prefs.likes).concat(Object.keys(watch), Object.keys(feedback)));
+        var seeds = keys.reduce(function (collected, id) {
+            var card = db.ids[id], vote = feedback[id];
+            if (!card || !visible(card, prefs.disputed) || vote && vote.action === 'negative') return collected;
+            var weight = vote && vote.action === 'positive' ? 1.22 : prefs.likes[id] ? 1 : viewingWeight(watch[id]);
+            if (weight) collected.push({card: card, weight: weight, focus: vote && vote.focus,
+                updated: vote && vote.when || prefs.likes[id] || watch[id] && watch[id].last || 0});
+            return collected;
+        }, []).sort(function (a, b) { return b.weight - a.weight || b.updated - a.updated; }).filter(function (seed) {
+            if (families[seed.card.family]) return false;
+            families[seed.card.family] = true;
+            return true;
+        }).slice(0, 12);
+        if (source) seeds = [{card: source, weight: 1}];
+        var negative = Object.keys(feedback).filter(function (id) { return feedback[id].action === 'negative'; })
+            .sort(function (a, b) { return feedback[b].when - feedback[a].when; }).slice(0, 6)
+            .map(function (id) { return {card: db.ids[id], weight: 1}; });
+        var trackedFamilies = maps();
+        seeds.forEach(function (seed) { trackedFamilies[seed.card.family] = true; });
+        var continuations = maps();
+        // Keep the furthest confirmed season in each family. A later view supersedes older next-season suggestions.
+        db.cards.forEach(function (card) {
+            var vote = feedback[card.id];
+            if (!trackedFamilies[card.family] && !(source && source.family === card.family)) return;
+            if (watch[card.id] || vote && vote.action === 'seen' || source && source.id === card.id || prefs.likes[card.id]) {
+                var previous = continuations[card.family];
+                if (!previous || card.year > previous.year) continuations[card.family] = card;
+            }
         });
-        var seeds = source ? [{card: source, weight: 1}] : unique(order.slice(0, 4).concat(watched.slice(0, 7))).slice(0, 9)
-            .map(function (id) {
-                var viewing = watch[id];
-                return {card: db.ids[id], weight: prefs.likes[id] ? 1 : viewing.percent >= 75 ? 0.77 : 0.58};
-            });
-        if (!seeds.length) return Promise.resolve([]);
-        var excluded = maps();
-        order.concat(watched, Object.keys(prefs.hidden)).forEach(function (id) { excluded[id] = true; });
-        if (source) excluded[source.id] = true;
-        var scores = maps();
-        seeds.forEach(function (seed) {
-            var tags = seed.card.tags.filter(function (tag) {
-                return !GENRE.test(tag) && (db.frequency[tag] || 0) > 3;
-            }).sort(function (a, b) {
-                return db.frequency[a] - db.frequency[b];
-            }).slice(0, 18);
-            var common = seed.card.tags.filter(function (tag) { return GENRE.test(tag); }).slice(0, 5);
-            tags.concat(common).forEach(function (tag) {
-                var weight = GENRE.test(tag) ? 0.12 : 1 + Math.log(db.cards.length / db.frequency[tag]);
-                db.tags[tag].forEach(function (candidate) {
-                    if (!excluded[candidate.id]) scores[candidate.id] = (scores[candidate.id] || 0) + seed.weight * weight;
-                });
-            });
-            seed.card.related.forEach(function (id) {
-                if (db.ids[id] && !excluded[id]) scores[id] = (scores[id] || 0) + seed.weight * 8;
-            });
+        Object.keys(prefs.hidden).concat(Object.keys(prefs.likes)).forEach(function (id) { excluded[id] = true; });
+        Object.keys(watch).forEach(function (id) { if (watch[id].substantial || watch[id].percent >= 75) excluded[id] = true; });
+        Object.keys(feedback).forEach(function (id) { excluded[id] = true; });
+        db.cards.forEach(function (card) { if (trackedFamilies[card.family]) excluded[card.id] = true; });
+        var next = uniqueCards(Object.keys(continuations).map(function (family) {
+            return db.ids[continuations[family].next];
+        })).filter(function (card) {
+            return visible(card, prefs.disputed) && !card.upcoming && !watch[card.id] && !prefs.hidden[card.id] && !feedback[card.id];
         });
-        var candidates = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; }).slice(0, 200)
-            .map(function (id) { return db.ids[id]; });
-        var descriptions = maps();
-        var preliminary = rankTaste(db, seeds, candidates, descriptions);
-        progress(preliminary);
-        // Refine the top results with descriptions; the open dataset is sufficient if Kitsu is unavailable.
-        var shortlist = uniqueCards(seeds.slice(0, 4).map(function (seed) { return seed.card; })
-            .concat(preliminary.slice(0, 8).map(function (entry) { return entry.card; })));
-        var synopsisQueue = shortlist.slice();
-        function nextSynopsis() {
-            var card = synopsisQueue.shift();
-            if (!card) return Promise.resolve();
-            return synopsis(card).then(function (description) {
-                if (description) descriptions[card.id] = description;
-                return nextSynopsis();
-            });
-        }
-        return Promise.all([nextSynopsis(), nextSynopsis(), nextSynopsis(), nextSynopsis()]).then(function () {
-            return Object.keys(descriptions).length ? rankTaste(db, seeds, candidates, descriptions) : preliminary;
-        });
+        return {seeds: seeds, negative: negative, excluded: excluded, next: next};
     }
 
     function sourceFromLampa(card, entry) {
@@ -731,18 +998,22 @@
         }).catch(function () { Lampa.Noty.show('Не удалось открыть карточку.'); });
     }
 
-    function rememberPlayback(play) {
-        if (!play || !play.source || !sufficient(play.timeline)) return;
-        var road = {percent: play.timeline.percent, time: play.timeline.time, duration: play.timeline.duration};
+    function rememberPlayback(play, update) {
+        if (!play || !play.source || !play.timeline && !update) return;
+        var current = update && update.road || play.timeline;
+        var road = {percent: current.percent, time: current.time, duration: current.duration,
+            season: current.season || play.season, episode: current.episode || play.episode};
+        var position = progressOf(road);
+        if (position > 0 && position < 35) play.replay = true;
+        var replay = play.replay;
+        var hash = update && update.hash || play.timeline && play.timeline.hash;
         catalog().then(function (db) {
-            var card = matchCatalog(db, play.source);
-            if (!card) return;
             var key = nativeKey(play.source);
             if (key && !play.yani && historyIndex && historyIndex.file === play.file) {
-                historyIndex.cards[key] = {source: play.source, card: card};
+                historyIndex.cards[key] = {source: play.source};
             }
-            storeViews(db, play.file, [{source: play.source, card: card, road: road,
-                stamp: play.stamp, native: !play.yani, yani: play.yani}]);
+            storeViews(db, play.file, [{source: play.source, road: road, hash: hash, session: play.stamp,
+                stamp: Date.now(), replay: replay, native: !play.yani, yani: play.yani}]);
         }).catch(function () {});
     }
 
@@ -754,6 +1025,7 @@
                 if (!data || !isAnimeCandidate(data.card)) { activePlayback = null; return; }
                 var card = data.card;
                 activePlayback = {source: card, timeline: data.timeline, stamp: Date.now(), file: historyFile(),
+                    season: data.season || data.season_number, episode: data.episode || data.episode_number,
                     yani: Number(card.yani_id || card.anime_id) || 0};
             });
             player.follow('destroy', function () {
@@ -763,8 +1035,10 @@
             player.follow('close', scheduleHistory);
         }
         if (Lampa.Timeline && Lampa.Timeline.listener) {
-            Lampa.Timeline.listener.follow('update', function () {
-                rememberPlayback(activePlayback);
+            Lampa.Timeline.listener.follow('update', function (event) {
+                var update = event && event.data;
+                var live = activePlayback && activePlayback.timeline;
+                if (live && update && String(update.hash) === String(live.hash)) rememberPlayback(activePlayback, update);
                 scheduleHistory();
             });
             Lampa.Timeline.listener.follow('read', scheduleHistory);
@@ -857,8 +1131,8 @@
         }
     }
 
-    function openTaste(mode, card) {
-        Lampa.Activity.push({url: 'anime-taste', title: NAME, component: COMPONENT, tasteMode: mode, tasteCard: card});
+    function openTaste(mode, card, focus) {
+        Lampa.Activity.push({url: 'anime-taste', title: NAME, component: COMPONENT, tasteMode: mode, tasteCard: card, tasteFocus: focus});
     }
 
     function animationCard(movie) {
@@ -966,8 +1240,10 @@
         var lastStorageState;
         var mode = object.tasteMode || 'recommendations';
         var source = object.tasteCard;
-        if ((mode === 'similar' || mode === 'mark' || mode === 'card') && !source) mode = 'recommendations';
+        var flavor = property(FOCUS, object.tasteFocus) ? object.tasteFocus : 'all';
+        if ((mode === 'similar' || mode === 'mark' || mode === 'card' || mode === 'bind') && !source) mode = 'recommendations';
         var query = '';
+        var interest = -1;
         var account = {favorites: []};
         var db, prefs, watch;
         var accountRequested = false;
@@ -993,6 +1269,7 @@
             button('Моё любимое', function () { show('favorites'); }).toggleClass('is-current', mode === 'favorites').appendTo(toolbar);
             button('История аниме', function () { show('history'); }).toggleClass('is-current', mode === 'history').appendTo(toolbar);
             if (Object.keys(data().hidden).length) button('Скрытые', function () { show('hidden'); }).toggleClass('is-current', mode === 'hidden').appendTo(toolbar);
+            button('Настройки подбора', function () { show('options'); }).toggleClass('is-current', mode === 'options').appendTo(toolbar);
         }
 
         function input() {
@@ -1000,11 +1277,19 @@
             Lampa.Input.edit({title: 'Название аниме или название и год', value: query, free: true, nosave: true, nomic: true}, function (value) {
                 query = String(value || '').trim();
                 Lampa.Controller.toggle('content');
-                if (query) show('search');
+                if (query) show(mode === 'bind' ? 'bind' : 'search');
             });
         }
 
         function selectCard(card) {
+            if (mode === 'bind') {
+                rememberBinding(source, card);
+                storeViews(db, historyFile(), [{source: source.source, card: card, road: source.road,
+                    season: source.season, stamp: source.stamp, native: true}]);
+                Lampa.Noty.show('Привязка сохранена');
+                Lampa.Activity.backward();
+                return;
+            }
             var selected = Boolean(prefs.likes[card.id]);
             var hidden = Boolean(prefs.hidden[card.id]);
             var entry = watch[card.id];
@@ -1017,12 +1302,29 @@
                     if (mode === 'mark') { Lampa.Activity.backward(); return; }
                     refresh();
                 }},
-                {title: 'Похожие на этот тайтл', action: function () { openTaste('similar', card); }},
                 {title: hidden ? 'Вернуть в рекомендации' : 'Скрыть из рекомендаций', action: function () {
                     setPreference(db, card, 'hidden', !hidden);
                     refresh();
                 }}
             ];
+            Object.keys(FOCUS).forEach(function (kind) {
+                items.push({title: FOCUS[kind], action: function () { openTaste('similar', card, kind); }});
+            });
+            var feedback = prefs.feedback[card.id];
+            items.push({title: 'Больше такого', action: function () {
+                function vote(kind) {
+                    setFeedback(card, 'positive', kind);
+                    Lampa.Noty.show('Учту в рекомендациях');
+                    refresh();
+                }
+                Lampa.Select.show({title: 'Что понравилось?', items: [
+                    {title: 'Всё вместе', kind: 'all'}, {title: 'Мир', kind: 'world'}, {title: 'Сюжет', kind: 'plot'},
+                    {title: 'Атмосфера', kind: 'mood'}, {title: 'Персонажи', kind: 'characters'}
+                ], onSelect: function (item) { vote(item.kind); }, onBack: function () { Lampa.Controller.toggle('content'); }});
+            }});
+            items.push({title: 'Не моё', action: function () { setFeedback(card, 'negative'); refresh(); }});
+            items.push({title: 'Уже видел', action: function () { setFeedback(card, 'seen'); refresh(); }});
+            if (feedback) items.push({title: 'Снять оценку', action: function () { setFeedback(card, null); refresh(); }});
             if (mode !== 'card') items.push({title: 'Описание и темы', action: function () { openTaste('card', card); }});
             if (yummy && window.LampaYaniDetail) items.push({
                 title: 'Открыть в YummyAnime', action: function () { openDetail(Object.assign({}, card, {id: yummy})); }
@@ -1037,7 +1339,8 @@
             if (card.poster) item.append($('<img class="anime-taste__image" alt="">').attr('src', card.poster));
             var text = $('<div class="anime-taste__caption"></div>').appendTo(item);
             text.append($('<div class="anime-taste__title"></div>').text(card.title));
-            text.append($('<div class="anime-taste__meta"></div>').text([card.year || '', card.type, card.rating > 0 ? '★ ' + card.rating.toFixed(1) : ''].filter(Boolean).join(' · ')));
+            text.append($('<div class="anime-taste__meta"></div>').text([card.year || '', card.type, card.age || '',
+                card.rating > 0 ? '★ ' + card.rating.toFixed(1) : ''].filter(Boolean).join(' · ')));
             if (reason) text.append($('<div class="anime-taste__reason"></div>').text(reason));
             item.on('hover:focus', function () { scroll.update(item, true); });
             results.append(item);
@@ -1050,10 +1353,23 @@
             refresh();
         }
 
+        function localState(saved, watch) { return JSON.stringify([saved, watch, guidance()]); }
+
+        function historyLabel(entry) {
+            var stats = watchStats(entry);
+            var detail = [];
+            if (entry.marked) detail.push('Отмечено просмотренным');
+            if (stats.finished) detail.push('Досмотрено серий — ' + stats.finished);
+            else if (entry.percent) detail.push('Начато — ' + entry.percent + '%');
+            if (entry.resumed) detail.push('Возвратов — ' + entry.resumed);
+            if (stats.replays) detail.push('Пересмотров — ' + stats.replays);
+            return detail.join(' · ');
+        }
+
         function refresh() {
             var current = ++ticket;
             var saved = data();
-            lastStorageState = JSON.stringify([saved, savedHistory()]);
+            lastStorageState = localState(saved, savedHistory());
             drawToolbar();
             results.empty();
             message.text('Загрузка…');
@@ -1070,18 +1386,42 @@
                 db = library;
                 prefs = preferences(db, saved, account);
                 watch = consolidateHistory(db);
-                lastStorageState = JSON.stringify([saved, watch]);
-                if (mode === 'favorites' || mode === 'hidden' || mode === 'history') {
-                    var listing = mode === 'favorites' ? prefs.likes : mode === 'hidden' ? prefs.hidden : watch;
-                    var ids = Object.keys(listing).filter(function (id) { return db.ids[id]; });
+                lastStorageState = localState(saved, watch);
+                if (mode === 'options') {
+                    message.text('Видимость каталога и сохранённые оценки.');
+                    button(saved.disputed ? 'Спорные карточки — показывать' : 'Спорные карточки — скрывать', function () {
+                        var fresh = data();
+                        fresh.disputed = !fresh.disputed;
+                        Lampa.Storage.set(STORAGE, fresh);
+                        refresh();
+                    }).appendTo(results);
+                    button('Мои оценки', function () { show('feedback'); }).appendTo(results);
+                    focus();
+                    return;
+                }
+                if (mode === 'favorites' || mode === 'hidden' || mode === 'history' || mode === 'feedback') {
+                    var listing = mode === 'favorites' ? prefs.likes : mode === 'hidden' ? prefs.hidden : mode === 'feedback' ? prefs.feedback : watch;
+                    var ids = Object.keys(listing).filter(function (id) { return db.ids[id] && visible(db.ids[id], prefs.disputed); });
                     if (mode === 'favorites') ids.sort(function (a, b) { return listing[b] - listing[a]; });
                     if (mode === 'history') ids.sort(function (a, b) { return listing[b].last - listing[a].last; });
-                    var empty = {favorites: 'Выберите аниме в поиске и нажмите «В любимое».',
+                    var empty = {favorites: 'Выберите аниме в поиске и нажмите «В любимое».', feedback: 'Оценок пока нет.',
                         hidden: 'Скрытых аниме пока нет.', history: 'История пока пуста. Здесь появится аниме с сохранённым прогрессом.'};
                     message.text(ids.length ? 'Тайтлов в списке — ' + ids.length : empty[mode]);
+                    if (mode === 'history') {
+                        var unresolved = guidance().unresolved;
+                        Object.keys(unresolved).forEach(function (key) {
+                            var record = unresolved[key];
+                            var title = record.source.name || record.source.original_name;
+                            button('Уточнить «' + title + '»' + (record.season ? ' · сезон ' + record.season : ''), function () {
+                                openTaste('bind', record);
+                            }).appendTo(results);
+                        });
+                    }
                     function listFrom(start) {
                         ids.slice(start, start + 50).forEach(function (id) {
-                            row(db.ids[id], mode === 'history' && watch[id].percent ? 'Прогресс эпизода — ' + watch[id].percent + '%' : '');
+                            var labels = {positive: 'Больше такого', negative: 'Не моё', seen: 'Уже видел'};
+                            row(db.ids[id], mode === 'history' ? historyLabel(watch[id]) :
+                                mode === 'feedback' ? labels[prefs.feedback[id].action] : '');
                         });
                         if (start + 50 < ids.length) {
                             var more = button('Показать ещё', function () {
@@ -1104,7 +1444,7 @@
                     focus();
                     return;
                 }
-                if (mode === 'mark' || mode === 'search') {
+                if (mode === 'mark' || mode === 'search' || mode === 'bind') {
                     var exact = mode === 'mark' && matchCatalog(db, source);
                     if (exact) {
                         var selected = Boolean(prefs.likes[exact.id]);
@@ -1118,13 +1458,16 @@
                         return;
                     }
                     var value = query;
+                    if (mode === 'bind' && !value) value = source.source.original_name || source.source.name || '';
                     if (mode === 'mark' && source) {
                         var year = source.year || String(source.first_air_date || source.release_date || '').slice(0, 4);
                         value = String(source.title || source.name || source.original_name || '') + (year ? ' ' + year : '');
                     }
                     if (!value) { message.text('Введите название аниме.'); return; }
-                    var matches = catalogueSearch(db, value, prefs.likes);
-                    message.text(matches.length ? (mode === 'mark' ? 'Выберите аниме и нажмите «В любимое».' : 'Совпадения по запросу «' + value + '».') : 'Подходящих аниме нет. Попробуйте другое название.');
+                    var matches = catalogueSearch(db, value, prefs.likes, prefs.disputed);
+                    message.text(matches.length ? (mode === 'bind' ? 'Выберите аниме для привязки истории.' : mode === 'mark' ?
+                        'Выберите аниме и нажмите «В любимое».' : 'Совпадения по запросу «' + value + '».') :
+                        'Подходящих аниме нет. Попробуйте другое название.');
                     matches.forEach(function (entry) { row(entry.card); });
                     if (matches.length && mode === 'search' && matches[0].score >= 90) {
                         var best = matches[0].card;
@@ -1133,19 +1476,41 @@
                     focus();
                     return;
                 }
-                if (!Object.keys(prefs.likes).length && !Object.keys(watch).length && mode !== 'similar') {
+                var profile = tasteProfile(db, prefs, watch, mode === 'similar' ? source : null);
+                if (!profile.seeds.length) {
                     message.text('Посмотрите аниме в Lampa или отметьте любимые тайтлы, чтобы получить рекомендации.');
                     return;
                 }
+                var groups = mode === 'recommendations' ? interestGroups(profile.seeds) : [];
+                if (groups.length > 1) {
+                    button('Все интересы', function () { interest = -1; refresh(); }).toggleClass('is-current', interest === -1).appendTo(toolbar);
+                    groups.forEach(function (group, index) {
+                        button('Как «' + group.title + '»', function () { interest = index; refresh(); })
+                            .toggleClass('is-current', interest === index).appendTo(toolbar);
+                    });
+                }
+                var seeds = groups[interest] ? groups[interest].seeds : profile.seeds;
                 function showRecommendations(rows) {
                     if (current !== ticket || destroyed) return;
                     results.empty();
-                    message.text(rows.length ? (mode === 'similar' ? 'Похожие на «' + source.title + '».' : 'По истории и избранному.') : 'Новых совпадений пока нет.');
-                    rows.slice(0, 25).forEach(function (entry) { row(entry.card, entry.reasons.join(' · ')); });
+                    message.text(mode === 'similar' ? FOCUS[flavor] + ' · «' + source.title + '»' : 'По вашей истории, избранному и оценкам.');
+                    if (profile.next.length) {
+                        $('<div class="anime-taste__message"></div>').text('Следующие сезоны').appendTo(results);
+                        profile.next.slice(0, 6).forEach(function (card) { row(card, 'Следующий сезон по каталогу'); });
+                    }
+                    $('<div class="anime-taste__message"></div>').text(rows.length ? 'Новые находки' : 'Новых совпадений пока нет.').appendTo(results);
+                    rows.slice(0, 25).forEach(function (entry) {
+                        row(entry.card, entry.reasons.join(' · '));
+                        results.children().last().addClass('anime-taste__suggestion');
+                    });
                     focus();
                 }
-                return independentSuggestions(db, prefs, watch, mode === 'similar' ? source : null,
-                    showRecommendations).then(showRecommendations);
+                showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative));
+                if (!Object.keys(db.story).length) return loadStories(db).then(function () {
+                    if (current === ticket && !destroyed && Object.keys(db.story).length) {
+                        showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative));
+                    }
+                });
             }).catch(function (error) {
                 if (current !== ticket || destroyed) return;
                 message.text(error && error.message || 'Не удалось загрузить данные.');
@@ -1167,15 +1532,15 @@
                 back: function () { Lampa.Activity.backward(); }
             });
             Lampa.Controller.toggle('content');
-            if (lastStorageState !== JSON.stringify([data(), savedHistory()])) refresh();
+            if (lastStorageState !== localState(data(), savedHistory())) refresh();
         };
         page.pause = function () { active = false; };
         page.stop = page.pause;
         page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '2.0.0', name: NAME, author: 'Nano',
-        description: 'Локальная история, избранное, поиск и рекомендации аниме по миру, сюжету и жанрам.'};
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.0.0', name: NAME, author: 'Nano',
+        description: 'История серий, избранное, оценки и рекомендации аниме по сюжету, миру и атмосфере.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
 }(typeof window === 'undefined' ? {} : window));
