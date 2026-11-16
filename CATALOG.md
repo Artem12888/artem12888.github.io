@@ -54,3 +54,29 @@ category route and presents its recommendations, search, favourites and
 history in that section. Posters use the host's `card` template and
 navigation stays within the Lampa activity stack. Builds without a native
 Anime entry receive an **Аниме** entry for the same section.
+
+The main recommendation shelf can be scrolled with the remote. **Показать
+ещё** appends the next available results and focuses the first new card.
+The first results use the strongest candidates and the published story
+neighbours. Further requests rank more catalogue candidates in batches
+until the eligible matches are exhausted. Each shelf avoids repeating a
+catalogue franchise. Confirmed continuations appear in a separate shelf
+on the general page.
+
+Choose **Как «…»** in the Anime section, or search for a title prefixed with
+**как**. The selected anime supplies the reference for story, setting and
+tag matching. Personal taste can reorder close matches, and the general
+continuation shelf is excluded from this view.
+
+The local recommendation model is a two-layer neural network with 96
+hashed tag inputs and 12 hidden units. It trains in the Lampa runtime from
+favourites, meaningful watch progress and explicit feedback. Unrated
+catalogue examples supply a small neutral reference. The network uses a
+bounded adjustment to the existing ranking, with a smaller influence for
+requests anchored to a specific title. Model training and inference run
+on the client. The published story index and optional YummyAnime signals
+remain available.
+
+The Anime layout follows the horizontal shelves and compact feature
+banner in the [DanielFadeeev Lampa theme](https://github.com/DanielFadeeev/lampa).
+It uses scoped styling and works independently of that theme.

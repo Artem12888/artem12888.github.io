@@ -1,4 +1,4 @@
-/* Аниме по вкусу 3.2.2 — персональные рекомендации для Lampa.
+/* Аниме по вкусу 3.3.0 — персональные рекомендации для Lampa.
  * Каталог: https://github.com/cedya77/anime-offline-database
  * Данные каталога распространяются по ODbL 1.0 и DbCL 1.0.
  */
@@ -86,7 +86,7 @@
         'contemporary fantasy':'современное фэнтези','epic fantasy':'эпическое фэнтези','school life':'школьная жизнь',
         'steampunk':'стимпанк','cyberpunk':'киберпанк','historical':'исторический сеттинг','urban':'город',
         'memory manipulation':'манипуляции с памятью','murder':'убийство','rebellion':'восстание',
-        'crime fiction':'криминальная история','anti hero':'антигерой','antihero':'антигерой'};
+        'crime':'криминал','crime fiction':'криминальная история','anti hero':'антигерой','antihero':'антигерой'};
     var STORY = [
         ['revenge', /\b(?:revenge|avenge[sd]?|vengeance|retribution)\b/],
         ['conspiracy', /\b(?:conspiracy|conspiracies|cover.up|secret organization|government plot)\b/],
@@ -116,7 +116,8 @@
         fmab: 'Fullmetal Alchemist Brotherhood', aot: 'Attack on Titan', snk: 'Shingeki no Kyojin',
         jjk: 'Jujutsu Kaisen', hxh: 'Hunter x Hunter', sao: 'Sword Art Online',
         mha: 'My Hero Academia', bnha: 'Boku no Hero Academia', opm: 'One Punch Man',
-        csm: 'Chainsaw Man', ngev: 'Neon Genesis Evangelion', ylia: 'Your Lie in April'
+        csm: 'Chainsaw Man', ngev: 'Neon Genesis Evangelion', ylia: 'Your Lie in April',
+        'ван пис': 'One Piece', 'ванпис': 'One Piece', 'атака титанов': 'Attack on Titan'
     };
     var KEY_EN = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`";
     var KEY_RU = 'йцукенгшщзхъфывапролджэячсмитьбюё';
@@ -300,7 +301,7 @@
         return db;
     }
 
-    function visible(card, disputed) { return card.restricted === 0 || card.restricted === 1 && disputed; }
+    function visible(card, disputed) { return card && (card.restricted === 0 || card.restricted === 1 && disputed); }
 
     function catalogueSearch(db, text, likes, disputed) {
         var query = parseQuery(text);
@@ -472,7 +473,85 @@
                 + mood.shared.length + cast.shared.length + Number(similarity > 0.15), reasons: reasons};
     }
 
-    function rankTaste(db, seeds, candidates, descriptions, focus, negative, assistance, autonomous) {
+    function tasteNetwork(db, positives, negatives) {
+        if (!positives.length) return null;
+        var signature = positives.map(function (seed) { return seed.card.id + ':' + seed.weight; }).join(',') +
+            '/' + negatives.map(function (seed) { return seed.card.id; }).join(',');
+        if (db.network && db.network.signature === signature) return db.network.predict;
+
+        var width = 96, hidden = 12;
+        var first = new Float32Array(width * hidden), last = new Float32Array(hidden);
+        var hiddenValues = new Float32Array(hidden), bias = 0;
+        var vectors = maps(), rated = maps(), hashState = 71817;
+        function random() {
+            hashState = (1664525 * hashState + 1013904223) >>> 0;
+            return hashState / 4294967296;
+        }
+        for (var i = 0; i < first.length; i++) first[i] = (random() - 0.5) * 0.28;
+        for (var j = 0; j < last.length; j++) last[j] = (random() - 0.5) * 0.28;
+
+        function vector(card) {
+            var bins = maps(), norm = 0;
+            card.tags.forEach(function (tag) {
+                var hash = 5381;
+                for (var k = 0; k < tag.length; k++) hash = (hash * 33 ^ tag.charCodeAt(k)) >>> 0;
+                var bin = hash % width;
+                var value = Math.min(2, 0.6 + 0.27 * Math.log(db.cards.length / db.frequency[tag]));
+                bins[bin] = (bins[bin] || 0) + (hash & 128 ? value : -value);
+            });
+            var keys = Object.keys(bins);
+            keys.forEach(function (key) { norm += bins[key] * bins[key]; });
+            var scale = Math.sqrt(norm) || 1;
+            return keys.map(function (key) { return [Number(key), bins[key] / scale]; });
+        }
+        function forward(input) {
+            var sum = bias;
+            for (var unit = 0; unit < hidden; unit++) {
+                var value = 0, offset = unit * width;
+                for (var k = 0; k < input.length; k++) value += input[k][1] * first[offset + input[k][0]];
+                hiddenValues[unit] = value >= 0 ? value : value * 0.12;
+                sum += last[unit] * hiddenValues[unit];
+            }
+            return 1 / (1 + Math.exp(-sum));
+        }
+        function sample(seed, target, weight) {
+            rated[seed.card.family] = true;
+            return {input: vector(seed.card), target: target, weight: weight};
+        }
+        var examples = positives.map(function (seed) { return sample(seed, 1, seed.weight); });
+        negatives.forEach(function (seed) { examples.push(sample(seed, 0, 1)); });
+        // Unrated catalogue samples are a neutral reference, not recorded dislikes.
+        for (var u = 0; u < positives.length * 2 + 16; u++) {
+            var card = db.cards[Math.floor(random() * db.cards.length)];
+            if (!rated[card.family] && card.tags.length && card.restricted !== 2) {
+                examples.push({input: vector(card), target: 0.30, weight: 0.25});
+            }
+        }
+        for (var epoch = 0; epoch < 14; epoch++) {
+            for (var step = 0; step < examples.length; step++) {
+                var example = examples[(step + epoch * 7) % examples.length];
+                var delta = (example.target - forward(example.input)) * example.weight * 0.16;
+                bias += delta * 0.30;
+                for (var unit = 0; unit < hidden; unit++) {
+                    var gradient = delta * last[unit] * (hiddenValues[unit] >= 0 ? 1 : 0.12);
+                    var offset = unit * width;
+                    last[unit] += delta * hiddenValues[unit];
+                    for (var k = 0; k < example.input.length; k++) {
+                        first[offset + example.input[k][0]] += gradient * example.input[k][1];
+                    }
+                }
+            }
+        }
+        var confidence = Math.min(1, (positives.length + negatives.length) / 6);
+        function predict(card) {
+            if (vectors[card.id] === undefined) vectors[card.id] = (forward(vector(card)) - 0.5) * confidence;
+            return vectors[card.id];
+        }
+        db.network = {signature: signature, predict: predict};
+        return predict;
+    }
+
+    function rankTaste(db, seeds, candidates, descriptions, focus, negative, assistance, autonomous, personalization) {
         function rarity(key) {
             return Math.min(1.65, 0.45 + Math.log((db.cards.length + 1) / ((db.frequency[key] || 0) + 1)) * 0.2);
         }
@@ -507,7 +586,8 @@
             }, 0);
             var signal = assistance && assistance[card.id] || 0;
             var bonus = signal && primary.score >= 0.28 ? Math.min(0.075, 0.06 * signal + Math.min(0.012, primary.score * 0.012)) : 0;
-            return {card: card, score: primary.score + 0.12 * agreement + 0.002 * card.rating - penalty, bonus: bonus,
+            var learned = personalization ? personalization.predict(card) * (personalization.anchored ? 0.11 : 0.22) : 0;
+            return {card: card, score: primary.score + 0.12 * agreement + 0.002 * card.rating - penalty + learned, bonus: bonus,
                 reasons: ['Похоже на «' + primary.seed + '»'].concat(primary.reasons.slice(0, 3))};
         }).filter(Boolean).sort(function (a, b) { return b.score - a.score || a.card.id.localeCompare(b.card.id); });
         if (autonomous) {
@@ -537,7 +617,7 @@
         });
     }
 
-    function recommend(db, seeds, excluded, disputed, focus, negative, suggestions) {
+    function recommendationQueue(db, seeds, excluded, disputed, focus, negative, suggestions, personalization) {
         var scores = maps(), neighbors = maps(), assistance = maps();
         function eligible(card) { return card && !card.upcoming && visible(card, disputed) && !excluded[card.id]; }
         function canonical(card) {
@@ -560,8 +640,9 @@
             });
             seed.card.related.forEach(function (id) { if (eligible(db.ids[id])) neighbors[id] = true; });
         });
-        var shortlist = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; }).slice(0, 260);
-        var candidates = uniqueCards(shortlist.concat(Object.keys(neighbors)).map(function (id) { return canonical(db.ids[id]); }));
+        var shortlist = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; });
+        var candidates = uniqueCards(shortlist.slice(0, 260).concat(Object.keys(neighbors))
+            .map(function (id) { return canonical(db.ids[id]); }));
         var seedIds = maps(), autonomous = null, supplemental = [];
         seeds.forEach(function (seed) { seedIds[seed.card.id] = true; });
         (suggestions || []).forEach(function (entry) {
@@ -578,7 +659,31 @@
             candidates.forEach(function (card) { autonomous[card.id] = true; });
             candidates = uniqueCards(candidates.concat(supplemental));
         }
-        return rankTaste(db, seeds, candidates, {}, focus || 'all', negative, assistance, autonomous);
+        var cursor = 260, visited = maps(), shown = maps();
+        function batch() {
+            var firstBatch = Boolean(candidates);
+            var group = candidates;
+            candidates = null;
+            if (!firstBatch) {
+                group = uniqueCards(shortlist.slice(cursor, cursor + 260).map(function (id) { return canonical(db.ids[id]); }));
+                cursor += 260;
+            }
+            var unseen = group.filter(function (card) {
+                if (visited[card.id] || shown[card.family]) return false;
+                visited[card.id] = true;
+                return true;
+            });
+            return rankTaste(db, seeds, unseen, {}, focus || 'all', negative,
+                firstBatch ? assistance : null, firstBatch ? autonomous : null, personalization).filter(function (entry) {
+                shown[entry.card.family] = true;
+                return true;
+            });
+        }
+        return {next: batch, hasMore: function () { return candidates !== null || cursor < shortlist.length; }};
+    }
+
+    function recommend(db, seeds, excluded, disputed, focus, negative, suggestions, personalization) {
+        return recommendationQueue(db, seeds, excluded, disputed, focus, negative, suggestions, personalization).next();
     }
 
     function interestGroups(seeds) {
@@ -669,7 +774,8 @@
     if (typeof module === 'object' && module.exports) {
         module.exports = {parseQuery: parseQuery, indexCatalog: indexCatalog, catalogueSearch: catalogueSearch,
             matchCatalog: matchCatalog, features: features, rankTaste: rankTaste, sufficient: sufficient,
-            recommend: recommend, interestGroups: interestGroups, viewingWeight: viewingWeight, viewedEpisode: viewedEpisode};
+            recommend: recommend, recommendationQueue: recommendationQueue, tasteNetwork: tasteNetwork,
+            interestGroups: interestGroups, viewingWeight: viewingWeight, viewedEpisode: viewedEpisode};
         return;
     }
 
@@ -1150,7 +1256,7 @@
     function tasteProfile(db, prefs, watch, source) {
         var feedback = prefs.feedback, excluded = maps(), families = maps();
         var keys = unique(Object.keys(prefs.likes).concat(Object.keys(watch), Object.keys(feedback)));
-        var seeds = keys.reduce(function (collected, id) {
+        var signals = keys.reduce(function (collected, id) {
             var card = db.ids[id], vote = feedback[id];
             if (!card || !visible(card, prefs.disputed) || vote && vote.action === 'negative') return collected;
             var weight = vote && vote.action === 'positive' ? 1.22 : prefs.likes[id] ? 1 : viewingWeight(watch[id]);
@@ -1161,11 +1267,11 @@
             if (families[seed.card.family]) return false;
             families[seed.card.family] = true;
             return true;
-        }).slice(0, 12);
-        if (source) seeds = [{card: source, weight: 1}];
+        });
+        var seeds = source ? [{card: source, weight: 1}] : signals.slice(0, 12);
         var negative = Object.keys(feedback).filter(function (id) { return feedback[id].action === 'negative'; })
-            .sort(function (a, b) { return feedback[b].when - feedback[a].when; }).slice(0, 6)
-            .map(function (id) { return {card: db.ids[id], weight: 1}; });
+            .sort(function (a, b) { return feedback[b].when - feedback[a].when; }).slice(0, 24)
+            .map(function (id) { return {card: db.ids[id], weight: 1}; }).filter(function (seed) { return seed.card; });
         var trackedFamilies = maps();
         seeds.forEach(function (seed) { trackedFamilies[seed.card.family] = true; });
         var continuations = maps();
@@ -1179,7 +1285,9 @@
             }
         });
         Object.keys(prefs.hidden).concat(Object.keys(prefs.likes)).forEach(function (id) { excluded[id] = true; });
-        Object.keys(watch).forEach(function (id) { if (watch[id].substantial || watch[id].percent >= 75) excluded[id] = true; });
+        Object.keys(watch).forEach(function (id) {
+            if (watch[id].marked || watch[id].substantial || watch[id].percent >= 75) excluded[id] = true;
+        });
         Object.keys(feedback).forEach(function (id) { excluded[id] = true; });
         db.cards.forEach(function (card) { if (trackedFamilies[card.family]) excluded[card.id] = true; });
         var next = uniqueCards(Object.keys(continuations).map(function (family) {
@@ -1187,7 +1295,7 @@
         })).filter(function (card) {
             return visible(card, prefs.disputed) && !card.upcoming && !watch[card.id] && !prefs.hidden[card.id] && !feedback[card.id];
         });
-        return {seeds: seeds, negative: negative, excluded: excluded, next: next};
+        return {seeds: seeds, signals: signals.slice(0, 72), negative: negative, excluded: excluded, next: next};
     }
 
     function sourceFromLampa(card, entry) {
@@ -1508,16 +1616,34 @@
             actions.prepend(add);
         });
         $('<style></style>').text([
-            '.anime-taste{padding:0 1.5em 2em}',
-            '.anime-taste__toolbar{display:flex;flex-wrap:wrap;margin-bottom:.8em}',
-            '.anime-taste__button{margin:.18em .45em .18em 0}',
-            '.anime-taste__button.is-current{text-decoration:underline;text-underline-offset:.21em}',
+            '.activity__body .anime-taste{min-height:100%;padding:.6em 1.5em 2em;background:#30394d;color:#f5f6fa}',
+            'body.anime-taste-open .wrap__content{background:#30394d}',
+            'body.anime-taste-open .head{background:#30394d!important;box-shadow:none!important}',
+            '.anime-taste__toolbar,.anime-taste__interests{display:flex;flex-wrap:wrap;margin-bottom:.32em}',
+            '.anime-taste .anime-taste__button{margin:.18em .45em .18em 0;padding:.52em .82em;border-radius:.8em;background:#46536a;color:#f5f6fa;opacity:1}',
+            '.anime-taste .anime-taste__button.is-current{background:#677891;color:#fff}',
+            '.anime-taste .anime-taste__button.focus{background:#f6f8fc;color:#172032}',
+            '.anime-taste__hero{position:relative;overflow:hidden;display:flex;align-items:flex-end;min-height:8.4em;margin:.5em 0 .9em;padding:1em 1.3em;border-radius:.85em;background:#465570}',
+            '.anime-taste__hero .card__img{position:absolute;right:0;top:0;width:55%;height:100%;object-fit:cover;object-position:50% 33%}',
+            '.anime-taste__hero:after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:linear-gradient(90deg,#465570 44%,rgba(70,85,112,0) 83%);pointer-events:none}',
+            '.anime-taste__hero-copy{position:relative;z-index:1;width:66%;text-shadow:0 1px 3px #30394d}',
+            '.anime-taste__hero-title{font-size:1.85em;font-weight:700;line-height:1.12}',
+            '.anime-taste__hero-meta{margin-top:.45em;color:#f0f3f9}',
             '.anime-taste__message{margin:.6em 0 .8em;line-height:1.4}',
+            '.anime-taste__message:empty{display:none}',
             '.anime-taste__grid{display:flex;flex-wrap:wrap;align-items:flex-start}',
             '.anime-taste__grid .anime-taste__row{width:20%;padding:0 .6em 1.3em;box-sizing:border-box}',
+            '.anime-taste__shelf{margin:.4em 0 1em}',
+            '.anime-taste__shelf-head{display:flex;align-items:center;justify-content:space-between;min-height:2.4em;margin:0 .5em .4em;font-weight:600}',
+            '.anime-taste__shelf .anime-taste__grid{position:relative;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}',
+            '.anime-taste__shelf .anime-taste__grid::-webkit-scrollbar{display:none}',
+            '.anime-taste__shelf .anime-taste__row{width:14.285%;flex:0 0 14.285%;padding:.25em .5em .65em}',
+            '.anime-taste__shelf .card__title{font-size:.95em;line-height:1.2}',
+            '.anime-taste__shelf .card__vote{display:block;color:#fff;background:#46536a;border-radius:.32em}',
             '.anime-taste__reason{font-size:.72em;line-height:1.28;opacity:.76;margin-top:.28em;max-height:3.84em;overflow:hidden}',
             '@media(max-width:800px){.anime-taste__grid .anime-taste__row{width:25%}}',
-            '@media(max-width:540px){.anime-taste__grid .anime-taste__row{width:33.333%}}'
+            '@media(max-width:700px){.anime-taste__shelf .anime-taste__row{width:20%;flex-basis:20%}}',
+            '@media(max-width:540px){.anime-taste__grid .anime-taste__row{width:33.333%}.anime-taste__shelf .anime-taste__row{width:28%;flex-basis:28%}}'
         ].join('\n')).appendTo('head');
     }
 
@@ -1532,15 +1658,16 @@
         var flavor = property(FOCUS, object.tasteFocus) ? object.tasteFocus : 'all';
         if ((mode === 'similar' || mode === 'mark' || mode === 'card' || mode === 'bind') && !source) mode = 'recommendations';
         var query = '';
-        var interest = -1;
+        var interest = null;
         var account = {favorites: []};
         var db, prefs, watch;
         var focusId;
         var workspace = $('<div class="anime-taste"></div>');
         var toolbar = $('<div class="anime-taste__toolbar"></div>').appendTo(workspace);
+        var interests = $('<div class="anime-taste__interests"></div>').appendTo(workspace);
         var message = $('<div class="anime-taste__message"></div>').appendTo(workspace);
         var results = $('<div class="anime-taste__results"></div>').appendTo(workspace);
-        var scroll = new Lampa.Scroll({mask: true, over: true, step: 220});
+        var scroll = new Lampa.Scroll({mask: false, over: true, step: 220});
         scroll.append(workspace);
 
         function focus() {
@@ -1552,6 +1679,7 @@
 
         function drawToolbar() {
             toolbar.empty();
+            interests.empty().hide();
             button('Поиск аниме', input).toggleClass('is-current', mode === 'search' || mode === 'mark').appendTo(toolbar);
             button('Рекомендации', function () { show('recommendations'); }).toggleClass('is-current', mode === 'recommendations').appendTo(toolbar);
             button('Моё любимое', function () { show('favorites'); }).toggleClass('is-current', mode === 'favorites').appendTo(toolbar);
@@ -1621,26 +1749,104 @@
                 onSelect: function (item) { item.action(); }, onBack: function () { Lampa.Controller.toggle('content'); }});
         }
 
-        function row(card, reason) {
-            var grid = results.children().last();
+        function row(card, reason, target) {
+            var grid = target || results.children().last();
             if (!grid.hasClass('anime-taste__grid')) grid = $('<div class="anime-taste__grid"></div>').appendTo(results);
             var item = $(Lampa.Template.get('card', {title: '', release_year: String(card.year || '')}));
             item.addClass('anime-taste__row').on('hover:enter', function () { focusId = card.id; selectCard(card); });
             item.data('tasteId', card.id);
             item.find('.card__title').addClass('anime-taste__title').text(card.title);
             item.find('.card__age').text([card.year || '', card.type, card.age || ''].filter(Boolean).join(' · '));
+            if (card.rating > 0) item.find('.card__view').append($('<div class="card__vote"></div>').text(Number(card.rating).toFixed(1)));
             showPoster(item, card);
             if (reason) item.append($('<div class="anime-taste__reason"></div>').text(reason));
-            item.on('hover:focus', function () { scroll.update(item, true); });
+            item.on('hover:focus', function () {
+                focusId = card.id;
+                if (target) {
+                    var track = grid[0], element = item[0];
+                    var left = element.offsetLeft, right = left + element.offsetWidth;
+                    if (left < track.scrollLeft) track.scrollLeft = left;
+                    else if (right > track.scrollLeft + track.clientWidth) track.scrollLeft = right - track.clientWidth;
+                }
+                scroll.update(item, true);
+            });
             grid.append(item);
             return item;
         }
 
         function show(next) {
             mode = next;
+            if (next === 'recommendations') interest = null;
             focusId = undefined;
             scroll.reset();
             refresh();
+        }
+
+        function displayHero(title, card, subtitle) {
+            var hero = $('<div class="anime-taste__hero"></div>').appendTo(results);
+            if (card && (card.poster || card.kitsu)) {
+                $('<img class="card__img" alt="" aria-hidden="true">').appendTo(hero);
+                showPoster(hero, card);
+            }
+            var content = $('<div class="anime-taste__hero-copy"></div>').appendTo(hero);
+            $('<div class="anime-taste__hero-title"></div>').text(title).appendTo(content);
+            if (subtitle) $('<div class="anime-taste__hero-meta"></div>').text(subtitle).appendTo(content);
+        }
+
+        function shelf(title) {
+            var section = $('<section class="anime-taste__shelf"></section>').appendTo(results);
+            var header = $('<div class="anime-taste__shelf-head"></div>').appendTo(section);
+            $('<div></div>').text(title).appendTo(header);
+            return {header: header, grid: $('<div class="anime-taste__grid"></div>').appendTo(section)};
+        }
+
+        function pagedShelf(title, queue, current) {
+            var lane = shelf(title);
+            var pending = [], busy = false, pageSize = 21;
+            var more = button('Показать ещё', function () { append(true); }).addClass('anime-taste__more');
+            lane.grid.data('tasteMore', function () {
+                if (!more.parent().length) return false;
+                append(true);
+                return true;
+            });
+            function append(moveFocus) {
+                if (busy || current !== ticket || destroyed) return;
+                busy = true;
+                function step() {
+                    if (current !== ticket || destroyed) return;
+                    if (pending.length < pageSize && queue.hasMore()) {
+                        pending = pending.concat(queue.next());
+                        if (pending.length < pageSize && queue.hasMore()) { setTimeout(step, 0); return; }
+                    }
+                    var latest = pending.splice(0, pageSize);
+                    latest.forEach(function (entry) {
+                        row(entry.card, entry.reasons[1] || entry.reasons[0], lane.grid).addClass('anime-taste__suggestion');
+                    });
+                    more.detach();
+                    if (pending.length || queue.hasMore()) more.appendTo(lane.header);
+                    if (!lane.grid.children().length) $('<div class="anime-taste__message"></div>').text('Подходящих аниме пока нет.').appendTo(lane.grid);
+                    busy = false;
+                    if (moveFocus && latest.length) focusId = latest[0].card.id;
+                    focus();
+                }
+                if (moveFocus && pending.length < pageSize && queue.hasMore()) {
+                    more.text('Загрузка…');
+                    setTimeout(function () { more.text('Показать ещё'); step(); }, 0);
+                } else step();
+            }
+            append(false);
+        }
+
+        function moveAcross(direction) {
+            var selected = workspace.find('.anime-taste__shelf .anime-taste__row.focus').first();
+            if (selected.length) {
+                var next = direction === 'right' ? selected.next('.anime-taste__row') : selected.prev('.anime-taste__row');
+                if (next.length) { Lampa.Controller.collectionFocus(next[0], workspace); return; }
+                var more = selected.parent().data('tasteMore');
+                if (direction === 'right' && more && more()) return;
+            }
+            if (window.Navigator.canmove(direction)) window.Navigator.move(direction);
+            else if (direction === 'left') Lampa.Controller.toggle('menu');
         }
 
         function localState(saved, watch) { return JSON.stringify([saved, watch, guidance()]); }
@@ -1668,6 +1874,9 @@
             var usesAccount = mode === 'recommendations' || mode === 'similar' || mode === 'favorites' || mode === 'options';
             var profileRequest = usesAccount ? deadline(snapshot(), {favorites: []}, 1700) :
                 Promise.resolve(connection ? account : {favorites: []});
+            if (mode === 'recommendations' || mode === 'similar') {
+                catalog().then(function (indexed) { if (!Object.keys(indexed.story).length) return loadStories(indexed); }).catch(function () {});
+            }
             Promise.all([catalog(), profileRequest]).then(function (ready) {
                 if (current !== ticket || destroyed) return;
                 db = ready[0];
@@ -1758,7 +1967,13 @@
                         value = String(source.title || source.name || source.original_name || '') + (year ? ' ' + year : '');
                     }
                     if (!value) { message.text('Введите название аниме.'); return; }
+                    var similarQuery = mode === 'search' && /^(?:похожие на|похоже на|как|like)\s+[«"']?(.+?)\s*[»"']?$/i.exec(value);
+                    if (similarQuery) value = similarQuery[1];
                     var matches = catalogueSearch(db, value, prefs.likes, prefs.disputed);
+                    if (similarQuery && matches.length && matches[0].score >= 90) {
+                        openTaste('similar', matches[0].card);
+                        return;
+                    }
                     message.text(matches.length ? (mode === 'bind' ? 'Выберите аниме для привязки истории.' : mode === 'mark' ?
                         'Выберите аниме и нажмите «В любимое».' : 'Совпадения по запросу «' + value + '».') :
                         'Подходящих аниме нет. Попробуйте другое название.');
@@ -1770,37 +1985,46 @@
                     focus();
                     return;
                 }
-                var profile = tasteProfile(db, prefs, watch, mode === 'similar' ? source : null);
+                var anchor = mode === 'similar' ? source : interest && db.ids[interest];
+                var profile = tasteProfile(db, prefs, watch, anchor);
                 if (!profile.seeds.length) {
                     message.text('Посмотрите аниме в Lampa или отметьте любимые тайтлы, чтобы получить рекомендации.');
                     return;
                 }
-                var groups = mode === 'recommendations' ? interestGroups(profile.seeds) : [];
-                if (groups.length > 1) {
-                    button('Все интересы', function () { interest = -1; refresh(); }).toggleClass('is-current', interest === -1).appendTo(toolbar);
-                    groups.forEach(function (group, index) {
-                        button('Как «' + group.title + '»', function () { interest = index; refresh(); })
-                            .toggleClass('is-current', interest === index).appendTo(toolbar);
+                if (mode === 'recommendations' && profile.signals.length) {
+                    interests.show();
+                    button('Все интересы', function () { selectInterest(null); })
+                        .toggleClass('is-current', !interest).appendTo(interests);
+                    profile.signals.slice(0, 6).forEach(function (seed) {
+                        button('Как «' + seed.card.title + '»', function () { selectInterest(seed.card.id); })
+                            .toggleClass('is-current', interest === seed.card.id).appendTo(interests);
                     });
                 }
-                var seeds = groups[interest] ? groups[interest].seeds : profile.seeds;
-                function showRecommendations(rows) {
-                    if (current !== ticket || destroyed) return;
-                    results.empty();
-                    message.text(mode === 'similar' ? FOCUS[flavor] + ' · «' + source.title + '»' : 'По вашей истории, избранному и оценкам.');
-                    if (profile.next.length) {
-                        $('<div class="anime-taste__message"></div>').text('Следующие сезоны').appendTo(results);
-                        profile.next.slice(0, 6).forEach(function (card) { row(card, 'Следующий сезон по каталогу'); });
-                    }
-                    $('<div class="anime-taste__message"></div>').text(rows.length ? 'Новые находки' : 'Новых совпадений пока нет.').appendTo(results);
-                    rows.slice(0, 25).forEach(function (entry) {
-                        row(entry.card, entry.reasons.join(' · ')).addClass('anime-taste__suggestion');
-                    });
-                    focus();
+
+                function selectInterest(id) {
+                    interest = id;
+                    focusId = null;
+                    scroll.reset();
+                    refresh();
                 }
+
+                var seeds = profile.seeds;
                 function renderList(loaded) {
                     if (current !== ticket || destroyed) return;
-                    showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative, loaded[1]));
+                    var predict = tasteNetwork(db, profile.signals, profile.negative);
+                    var queue = recommendationQueue(db, seeds, profile.excluded, prefs.disputed, flavor,
+                        profile.negative.slice(0, 6), loaded[1], predict && {predict: predict, anchored: Boolean(anchor)});
+                    message.empty();
+                    var title = anchor ? 'Как «' + anchor.title + '»' : 'Аниме по вашему вкусу';
+                    var subtitle = anchor ? (flavor === 'all' ? anchor.tags.filter(function (tag) { return GENRE.test(tag); })
+                        .slice(0, 4).map(tagLabel).join(' · ') : FOCUS[flavor]) : 'По избранному, истории и оценкам';
+                    displayHero(title, anchor || seeds[0].card, subtitle);
+                    pagedShelf(anchor ? 'Похожие аниме' : 'Рекомендации для вас', queue, current);
+                    if (!anchor && profile.next.length) {
+                        var seasons = shelf('Следующие сезоны');
+                        profile.next.forEach(function (card) { row(card, '', seasons.grid); });
+                    }
+                    focus();
                 }
                 var story = Object.keys(db.story).length ? Promise.resolve() : deadline(loadStories(db), null, 3500);
                 var suggestions = connection && account.verified ?
@@ -1818,10 +2042,11 @@
         page.render = function (native) { return scroll.render(native); };
         page.start = function () {
             active = true;
+            $('body').addClass('anime-taste-open');
             Lampa.Controller.add('content', {
                 toggle: focus,
-                left: function () { if (window.Navigator.canmove('left')) window.Navigator.move('left'); else Lampa.Controller.toggle('menu'); },
-                right: function () { window.Navigator.move('right'); },
+                left: function () { moveAcross('left'); },
+                right: function () { moveAcross('right'); },
                 up: function () { if (window.Navigator.canmove('up')) window.Navigator.move('up'); else Lampa.Controller.toggle('head'); },
                 down: function () { window.Navigator.move('down'); },
                 back: function () { Lampa.Activity.backward(); }
@@ -1829,12 +2054,12 @@
             Lampa.Controller.toggle('content');
             if (lastStorageState !== localState(data(), savedHistory())) refresh();
         };
-        page.pause = function () { active = false; };
+        page.pause = function () { active = false; $('body').removeClass('anime-taste-open'); };
         page.stop = page.pause;
         page.destroy = function () { destroyed = true; active = false; ticket++; scroll.destroy(); };
     }
 
-    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.2.2', name: NAME, author: 'Nano',
+    if (Lampa.Manifest) Lampa.Manifest.plugins = {type: 'other', version: '3.3.0', name: NAME, author: 'Nano',
         description: 'Независимый подбор аниме с дополнительными сигналами подключённого YummyAnime.'};
     if (window.appready) register();
     else Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') register(); });
