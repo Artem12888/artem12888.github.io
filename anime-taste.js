@@ -1505,12 +1505,13 @@
                     });
                     focus();
                 }
-                showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative));
-                if (!Object.keys(db.story).length) return loadStories(db).then(function () {
-                    if (current === ticket && !destroyed && Object.keys(db.story).length) {
-                        showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative));
-                    }
-                });
+                function renderList() {
+                    if (current !== ticket || destroyed) return;
+                    showRecommendations(recommend(db, seeds, profile.excluded, prefs.disputed, flavor, profile.negative));
+                }
+                if (Object.keys(db.story).length) return renderList();
+                var wait = new Promise(function (resolve) { setTimeout(resolve, 3500); });
+                return Promise.race([loadStories(db), wait]).then(renderList);
             }).catch(function (error) {
                 if (current !== ticket || destroyed) return;
                 message.text(error && error.message || 'Не удалось загрузить данные.');
